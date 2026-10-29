@@ -40,14 +40,38 @@ fn zombie_ignores_other_floors() {
 }
 
 #[test]
-fn zombie_bites_on_a_cooldown() {
+fn zombie_attacks_respect_cooldown_and_damage_range() {
     let mut w = World::new(std::path::PathBuf::from("nonexistent"));
     let mut p = Player::new(5.0, 5.0);
     let mut z = Zombie::new(4.5, 5.0, 0);
-    z.tick(&mut p, &mut w);
-    assert_eq!(p.health, 88.0);
-    for _ in 0..44 { z.tick(&mut p, &mut w); }
-    assert_eq!(p.health, 88.0, "no second bite during the cooldown");
-    z.tick(&mut p, &mut w);
-    assert_eq!(p.health, 76.0);
+    let mut last = p.health;
+    let mut drops = 0;
+    for tick in 0..45 * 40 {
+        z.tick(&mut p, &mut w);
+        if p.health < last {
+            assert!((last - p.health) < 20.0 + 1e-3, "one hit does at most 19.99 damage");
+            assert_eq!(tick % 45, 0, "hits only land when the cooldown expires");
+            drops += 1;
+        }
+        last = p.health;
+        if p.health <= 0.0 { break; }
+    }
+    assert!(drops >= 3, "drops={drops}");
+}
+
+#[test]
+fn attack_rule_matches_the_original_tables() {
+    use pz_sim::*;
+    let r = |hit, laceration, bite| AttackRolls { hit, laceration, bite, dmg: 500, dmg_scale: 0 };
+    // Front, single zombie: base chance 15 -> rolls <= 15 miss.
+    assert_eq!(resolve_attack(r(15, 0, 0), Side::Front, 1).outcome, Outcome::Miss);
+    assert_eq!(resolve_attack(r(16, 0, 0), Side::Front, 1).outcome, Outcome::Scratch);
+    assert_eq!(resolve_attack(r(99, 66, 0), Side::Front, 1).outcome, Outcome::Laceration);
+    assert_eq!(resolve_attack(r(99, 99, 86), Side::Front, 1).outcome, Outcome::Bite);
+    // Damage: Rand(1000)/1000 * (Rand(10)+10) = 0.5 * 10.
+    assert_eq!(resolve_attack(r(99, 0, 0), Side::Front, 1).damage, 5.0);
+    // From the side the base chance drops by 30 -> rolls <= -15 never miss.
+    assert_eq!(resolve_attack(r(0, 0, 0), Side::Side, 1).outcome, Outcome::Scratch);
+    // Two attackers: base chance 5.
+    assert_eq!(resolve_attack(r(5, 0, 0), Side::Front, 2).outcome, Outcome::Miss);
 }

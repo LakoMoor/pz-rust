@@ -22,6 +22,8 @@ pub struct Player {
     pub height: f32,
     /// 0..=100; zombies bite it down.
     pub health: f32,
+    /// Set by a zombie bite (the game's infection mechanic; no cure in vanilla).
+    pub infected: bool,
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -30,7 +32,7 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, facing: [1.0, 0.0], swing_cd: 0 } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, facing: [1.0, 0.0], swing_cd: 0 } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     pub fn tick(&mut self, input: Input, world: &mut World) {
@@ -126,7 +128,6 @@ const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keep
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
 const ATTACK_RANGE: f32 = 0.9;
-const ATTACK_DAMAGE: f32 = 12.0;
 const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 
 /// A zombie that shambles straight toward a visible player on the same floor.
@@ -181,9 +182,58 @@ impl Zombie {
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
         if dist > ZOMBIE_SIGHT { self.idle(world); return; }
         if dist < ATTACK_RANGE {
-            if self.cooldown == 0 { target.health = (target.health - ATTACK_DAMAGE).max(0.0); self.cooldown = ATTACK_COOLDOWN; }
+            if self.cooldown == 0 {
+                let side = side_of(target.facing, [-d[0], -d[1]]);
+                let (r1, r2, r3, r4, r5) = (self.rand(100), self.rand(100), self.rand(100), self.rand(1000), self.rand(10));
+                let hit = resolve_attack(AttackRolls { hit: r1, laceration: r2, bite: r3, dmg: r4, dmg_scale: r5 }, side, 1);
+                if hit.outcome != Outcome::Miss {
+                    target.health = (target.health - hit.damage).max(0.0);
+                    if hit.outcome == Outcome::Bite { target.infected = true; }
+                }
+                self.cooldown = ATTACK_COOLDOWN;
+            }
             return;
         }
         slide(&mut self.pos, self.z, d, ZOMBIE_SPEED, world, false);
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side { Front, Behind, Side }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Outcome { Miss, Scratch, Laceration, Bite }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Hit { pub outcome: Outcome, pub damage: f32 }
+
+/// Pre-rolled dice (`Rand.Next(100)` x3, `Rand.Next(1000)`, `Rand.Next(10)`), so the rule is a pure function.
+#[derive(Clone, Copy)]
+pub struct AttackRolls { pub hit: u32, pub laceration: u32, pub bite: u32, pub dmg: u32, pub dmg_scale: u32 }
+
+/// Which side of the victim the attacker is on. `to_attacker` is the vector victim -> attacker.
+/// (The game uses `testDotSide`; the thresholds here are an approximation.)
+pub fn side_of(facing: [f32; 2], to_attacker: [f32; 2]) -> Side {
+    let l = to_attacker[0].hypot(to_attacker[1]).max(1e-6);
+    let dot = (facing[0] * to_attacker[0] + facing[1] * to_attacker[1]) / l;
+    if dot > 0.5 { Side::Front } else if dot < -0.5 { Side::Behind } else { Side::Side }
+}
+
+/// BodyDamage.AddRandomDamageFromZombie (default sandbox options, no traits/clothing/body parts):
+/// the zombie lands a hit when `Rand(100) > baseChance`; a hit is a scratch unless the laceration
+/// roll beats `baseLacerationChance` or the bite roll beats `baseBiteChance`.
+pub fn resolve_attack(r: AttackRolls, side: Side, zombies_attacking: u32) -> Hit {
+    let n = zombies_attacking.max(1) as i32;
+    let (mut base, mut bite, mut lac) = (15 - (n - 1) * 10, 85 - (n - 1) * 30, 65 - (n - 1) * 15);
+    match side {
+        Side::Behind => {
+            base -= 15; bite -= 25; lac -= 35;
+            if n > 2 { bite -= 15; lac -= 15; }
+        }
+        Side::Side => { base -= 30; bite -= 7; lac -= 27; }
+        Side::Front => {}
+    }
+    if (r.hit as i32) <= base { return Hit { outcome: Outcome::Miss, damage: 0.0 }; }
+    let outcome = if (r.bite as i32) > bite { Outcome::Bite } else if (r.laceration as i32) > lac { Outcome::Laceration } else { Outcome::Scratch };
+    Hit { outcome, damage: (r.dmg as f32 / 1000.0) * (r.dmg_scale as f32 + 10.0) }
 }
