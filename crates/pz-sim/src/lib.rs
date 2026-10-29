@@ -20,12 +20,14 @@ pub struct Player {
     pub z: usize,
     /// Continuous height in floors (z plus progress along a staircase).
     pub height: f32,
+    /// 0..=100; zombies bite it down.
+    pub health: f32,
 }
 
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0 } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0 } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     pub fn tick(&mut self, input: Input, world: &mut World) {
@@ -99,19 +101,27 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
 
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 14.0;
+const ATTACK_RANGE: f32 = 0.9;
+const ATTACK_DAMAGE: f32 = 12.0;
+const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 
 /// A zombie that shambles straight toward a visible player on the same floor.
 #[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize }
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, cooldown: u32 }
 
 impl Zombie {
-    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z } }
+    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z, cooldown: 0 } }
 
-    pub fn tick(&mut self, target: &Player, world: &mut World) {
+    pub fn tick(&mut self, target: &mut Player, world: &mut World) {
+        self.cooldown = self.cooldown.saturating_sub(1);
         if target.z != self.z { return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if dist > ZOMBIE_SIGHT || dist < 0.6 { return; }
+        if dist > ZOMBIE_SIGHT { return; }
+        if dist < ATTACK_RANGE {
+            if self.cooldown == 0 { target.health = (target.health - ATTACK_DAMAGE).max(0.0); self.cooldown = ATTACK_COOLDOWN; }
+            return;
+        }
         slide(&mut self.pos, self.z, d, ZOMBIE_SPEED, world, false);
     }
 }

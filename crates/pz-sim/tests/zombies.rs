@@ -14,10 +14,10 @@ fn zombie_closes_in_across_open_street() {
         let clear = (0..9).all(|i| w.has_floor(x + i, y, 0) == w.has_floor(x, y, 0)
             && w.can_step((x + i, y), (x + i + 1, y), 0));
         if clear && w.column(x, y, 0).is_some() {
-            let player = Player::new((x + 8) as f32, y as f32);
+            let mut player = Player::new((x + 8) as f32, y as f32);
             let mut z = Zombie::new(x as f32, y as f32, 0);
             let start = player.pos[0] - z.pos[0];
-            for _ in 0..(10.0 * TICK_HZ) as u32 { z.tick(&player, &mut w); }
+            for _ in 0..(10.0 * TICK_HZ) as u32 { z.tick(&mut player, &mut w); }
             assert!(player.pos[0] - z.pos[0] < start - 5.0, "zombie moved only {}", start - (player.pos[0] - z.pos[0]));
             done = true;
             break 'outer;
@@ -35,6 +35,19 @@ fn zombie_ignores_other_floors() {
     let mut p = Player::new(5.0, 5.0);
     p.z = 1;
     let mut z = Zombie::new(0.0, 5.0, 0);
-    z.tick(&p, &mut w);
+    z.tick(&mut p, &mut w);
     assert_eq!(z.pos, [0.0, 5.0]);
+}
+
+#[test]
+fn zombie_bites_on_a_cooldown() {
+    let mut w = World::new(std::path::PathBuf::from("nonexistent"));
+    let mut p = Player::new(5.0, 5.0);
+    let mut z = Zombie::new(4.5, 5.0, 0);
+    z.tick(&mut p, &mut w);
+    assert_eq!(p.health, 88.0);
+    for _ in 0..44 { z.tick(&mut p, &mut w); }
+    assert_eq!(p.health, 88.0, "no second bite during the cooldown");
+    z.tick(&mut p, &mut w);
+    assert_eq!(p.health, 76.0);
 }

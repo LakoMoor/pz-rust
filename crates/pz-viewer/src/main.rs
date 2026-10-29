@@ -286,10 +286,11 @@ impl ApplicationHandler for App {
                 while self.acc >= TICK_DT {
                     self.scene.player.tick(input, &mut self.scene.world);
                     let scn = &mut self.scene;
-                    for zb in &mut scn.zombies { zb.tick(&scn.player, &mut scn.world); }
+                    for zb in &mut scn.zombies { zb.tick(&mut scn.player, &mut scn.world); }
                     self.acc -= TICK_DT;
                 }
                 self.center = player_cam(&self.scene.player);
+                g.window.set_title(&format!("pz-rust | health {:.0}{}", self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
                 let size = (g.config.width, g.config.height);
                 let (mut inst, batches) = self.scene.build(self.center, size, self.zoom);
                 g.r.prepare(&self.scene.assets, &mut inst, &batches);
