@@ -1510,6 +1510,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pz-net"
+version = "0.1.0"
+dependencies = [
+ "pz-sim",
+ "pz-world",
+]
+
+[[package]]
 name = "pz-scripts"
 version = "0.1.0"
 

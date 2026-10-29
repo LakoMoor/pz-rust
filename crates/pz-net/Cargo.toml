@@ -1,0 +1,8 @@
+[package]
+name = "pz-net"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+pz-sim = { path = "../pz-sim" }
+pz-world = { path = "../pz-world" }
