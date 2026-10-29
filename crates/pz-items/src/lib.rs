@@ -21,6 +21,13 @@ pub struct ItemDef {
     /// `SoundRadius` / `SoundVolume`: how far a swing of this weapon is heard.
     pub sound_radius: f32,
     pub sound_volume: f32,
+    /// Firearm stats; `ammo_type` is `Some` for ranged weapons.
+    pub ammo_type: Option<String>,
+    pub hit_chance: f32,
+    pub min_sight_range: f32,
+    pub max_sight_range: f32,
+    pub recoil_delay: f32,
+    pub max_ammo: f32,
     /// `Categories` contains `base:smallblade` (such weapons never stagger zombies).
     pub small_blade: bool,
     /// `Tags = base:a;base:b`
@@ -46,12 +53,22 @@ fn def(module: &str, b: &Block) -> ItemDef {
         swing_time: num(b, "Swingtime"),
         crit_chance: num(b, "CriticalChance"),
         crit_dmg_multiplier: num(b, "CritDmgMultiplier"),
+        ammo_type: b.prop("AmmoType").map(str::to_string),
+        hit_chance: num(b, "HitChance"),
+        min_sight_range: num(b, "MinSightRange"),
+        max_sight_range: num(b, "MaxSightRange"),
+        recoil_delay: num(b, "RecoilDelay"),
+        max_ammo: num(b, "MaxAmmo"),
         sound_radius: b.prop("SoundRadius").and_then(|v| v.parse().ok()).unwrap_or(0.0),
         sound_volume: b.prop("SoundVolume").and_then(|v| v.parse().ok()).unwrap_or(0.0),
         push_back_mod: b.prop("PushBackMod").and_then(|v| v.parse().ok()).unwrap_or(1.0),
         tags: b.prop("Tags").map(|t| t.split(";").map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
         small_blade: b.prop("Categories").is_some_and(|c| c.contains("smallblade")),
     }
+}
+
+impl ItemDef {
+    pub fn is_firearm(&self) -> bool { self.ammo_type.is_some() }
 }
 
 impl ItemDb {

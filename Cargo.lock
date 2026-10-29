@@ -1521,6 +1521,7 @@ dependencies = [
 name = "pz-net"
 version = "0.1.0"
 dependencies = [
+ "pz-items",
  "pz-sim",
  "pz-world",
 ]

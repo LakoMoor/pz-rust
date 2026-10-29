@@ -33,3 +33,15 @@ fn baseball_bat_stats() {
     let pistol = db.get("Base.Pistol").unwrap();
     assert!(pistol.sound_radius >= 50.0 && pistol.sound_volume > 0.0, "{} {}", pistol.sound_radius, pistol.sound_volume);
 }
+
+#[test]
+fn pistol_firearm_stats_come_from_the_scripts() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let scripts = std::path::PathBuf::from(dir).join("media").join("scripts");
+    if !scripts.is_dir() { return; }
+    let db = pz_items::ItemDb::load(&scripts).unwrap();
+    let p = db.get("Base.Pistol").unwrap();
+    assert!(p.is_firearm());
+    assert_eq!((p.hit_chance, p.min_sight_range, p.max_sight_range, p.max_ammo, p.recoil_delay), (50.0, 2.0, 6.0, 15.0, 12.0));
+    assert!(!db.get("Base.BaseballBat").unwrap().is_firearm());
+}

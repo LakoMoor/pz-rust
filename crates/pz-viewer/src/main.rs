@@ -224,7 +224,7 @@ struct Gfx { window: Arc<Window>, surface: wgpu::Surface<'static>, config: wgpu:
 
 struct App {
     args: Args, scene: Scene, gfx: Option<Gfx>, center: [f32; 2], zoom: f32,
-    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon, net: Option<pz_net::udp::UdpClient>,
+    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon, gun: Option<pz_sim::firearm::Gun>, net: Option<pz_net::udp::UdpClient>,
 }
 
 impl ApplicationHandler for App {
@@ -264,6 +264,13 @@ impl ApplicationHandler for App {
                             let w = self.weapon;
                             let scn = &mut self.scene;
                             scn.player.attack(&mut scn.zombies, &w);
+                        }
+                    }
+                    if k == KeyCode::KeyF && event.state == ElementState::Pressed && !event.repeat {
+                        if let Some(net) = self.net.as_mut() { let _ = net.send(&pz_net::ClientMsg::Shoot); } else if let Some(g) = self.gun.as_mut() {
+                            let scn = &mut self.scene;
+                            let shot = scn.player.shoot(&mut scn.zombies, g);
+                            log::info!("shot: {shot:?}, {} rounds left", g.ammo);
                         }
                     }
                     if k == KeyCode::KeyE && event.state == ElementState::Pressed && !event.repeat {
@@ -367,6 +374,8 @@ fn main() {
         .unwrap_or(Weapon::FISTS);
     log::info!("weapon: {weapon:?}");
     let net = app_net(&args);
-    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon, net };
+    let gun = pz_items::ItemDb::load(&args.pz.join("media").join("scripts")).ok()
+        .and_then(|db| db.get("Base.Pistol").and_then(pz_net::gun_from_item));
+    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon, gun, net };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
 }

@@ -67,3 +67,23 @@ fn attack_message_kills_zombies_on_the_server() {
     let ServerMsg::Snapshot { zombies, .. } = s.tick();
     assert!(zombies.is_empty(), "zombie should be dead: {zombies:?}");
 }
+
+#[test]
+fn shoot_message_round_trips_and_fires_the_players_own_gun() {
+    use pz_sim::firearm::{Firearm, Gun};
+    assert_eq!(ClientMsg::decode(&ClientMsg::Shoot.encode()), Ok(ClientMsg::Shoot));
+    let gun = Gun {
+        firearm: Firearm { hit_chance: 100.0, min_sight_range: 0.0, max_sight_range: 20.0 },
+        min_damage: 5.0, max_damage: 5.0, max_range: 15.0, recoil_delay: 5, ammo: 1, sound_radius: 50.0, sound_volume: 50.0,
+    };
+    let mut s = Server::new(World::new("nonexistent"), vec![Zombie::new(4.0, 0.0, 0)]);
+    s.set_gun(gun);
+    s.join(1, 0.0, 0.0);
+    s.handle(1, ClientMsg::Input { seq: 1, dir: [1.0, 0.0], run: false });
+    s.tick(); // face +x
+    s.handle(1, ClientMsg::Input { seq: 2, dir: [0.0, 0.0], run: false });
+    // Players who never joined with a gun cannot shoot (no panic), and the loaded one does.
+    s.handle(1, ClientMsg::Shoot);
+    let ServerMsg::Snapshot { zombies, .. } = s.tick();
+    assert!(zombies.is_empty() || zombies[0].health < 1.95, "the bullet should have landed: {zombies:?}");
+}

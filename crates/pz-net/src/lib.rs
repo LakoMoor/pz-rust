@@ -1,5 +1,6 @@
 //! Transport-agnostic multiplayer core: a compact binary protocol plus an authoritative server
 //! that advances the same fixed-tick simulation as the single-player client.
+use pz_sim::firearm::{Firearm, Gun};
 use pz_sim::{GameClock, Input, Player, Weapon, Zombie};
 use pz_world::World;
 use std::collections::BTreeMap;
@@ -15,6 +16,8 @@ pub enum ClientMsg {
     Attack,
     /// Open/close the nearest door.
     Interact,
+    /// Fire the equipped gun in the facing direction.
+    Shoot,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +59,7 @@ impl ClientMsg {
             ClientMsg::Input { seq, dir, run } => { w.u8(1); w.u32(*seq); w.f32(dir[0]); w.f32(dir[1]); w.u8(*run as u8); }
             ClientMsg::Attack => w.u8(2),
             ClientMsg::Interact => w.u8(3),
+            ClientMsg::Shoot => w.u8(4),
         }
         w.0
     }
@@ -65,6 +69,7 @@ impl ClientMsg {
             1 => Ok(ClientMsg::Input { seq: r.u32()?, dir: [r.f32()?, r.f32()?], run: r.u8()? != 0 }),
             2 => Ok(ClientMsg::Attack),
             3 => Ok(ClientMsg::Interact),
+            4 => Ok(ClientMsg::Shoot),
             t => Err(DecodeError::BadTag(t)),
         }
     }
@@ -116,18 +121,25 @@ pub struct Server {
     inputs: BTreeMap<ClientId, Input>,
     zombies: Vec<Zombie>,
     weapon: Weapon,
+    /// Firearm template: every joining player gets their own loaded copy.
+    gun: Option<Gun>,
+    guns: BTreeMap<ClientId, Gun>,
     /// Game time; sets how far zombies see.
     pub clock: GameClock,
 }
 
 impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default() }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default(), gun: None, guns: BTreeMap::new() }
     }
 
     pub fn set_weapon(&mut self, w: Weapon) { self.weapon = w; }
-    pub fn join(&mut self, id: ClientId, x: f32, y: f32) { self.players.insert(id, Player::new(x, y)); }
-    pub fn leave(&mut self, id: ClientId) { self.players.remove(&id); self.inputs.remove(&id); }
+    /// Give joining players this (loaded) firearm; `Shoot` does nothing without one.
+    pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
+    pub fn join(&mut self, id: ClientId, x: f32, y: f32) { self.players.insert(id, Player::new(x, y));
+        if let Some(g) = self.gun { self.guns.insert(id, g); }
+    }
+    pub fn leave(&mut self, id: ClientId) { self.players.remove(&id); self.inputs.remove(&id); self.guns.remove(&id); }
 
     pub fn handle(&mut self, id: ClientId, msg: ClientMsg) {
         if !self.players.contains_key(&id) { return; }
@@ -141,6 +153,9 @@ impl Server {
             ClientMsg::Attack => {
                 let w = self.weapon;
                 if let Some(p) = self.players.get_mut(&id) { p.attack(&mut self.zombies, &w); }
+            }
+            ClientMsg::Shoot => {
+                if let (Some(p), Some(g)) = (self.players.get_mut(&id), self.guns.get_mut(&id)) { p.shoot(&mut self.zombies, g); }
             }
             ClientMsg::Interact => {
                 if let Some(p) = self.players.get(&id) { p.interact(&mut self.world); }
@@ -175,4 +190,14 @@ impl Server {
             doors: self.world.open_doors().into_iter().map(|(x, y, z)| (x, y, z as u8)).collect(),
         }
     }
+}
+
+/// Build a loaded [`Gun`] from an item script; `None` unless the item is a firearm.
+pub fn gun_from_item(d: &pz_items::ItemDef) -> Option<Gun> {
+    d.is_firearm().then(|| Gun {
+        firearm: Firearm { hit_chance: d.hit_chance, min_sight_range: d.min_sight_range, max_sight_range: d.max_sight_range },
+        min_damage: d.min_damage, max_damage: d.max_damage, max_range: d.max_range,
+        recoil_delay: d.recoil_delay as u32, ammo: d.max_ammo as u32,
+        sound_radius: d.sound_radius, sound_volume: d.sound_volume,
+    })
 }
