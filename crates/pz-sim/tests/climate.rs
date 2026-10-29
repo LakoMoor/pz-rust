@@ -129,3 +129,31 @@ fn the_calendar_rolls_days_months_and_years_and_refreshes_dawn_and_fog() {
     for _ in 0..(60.0 * TICK_HZ) as u32 / 4 { clock.tick(); cl.advance(&mut clock); }
     assert_eq!((cl.month, cl.day), (1, 29));
 }
+
+#[test]
+fn rain_comes_and_goes_with_a_front_and_blinds_zombies() {
+    use pz_sim::climate::{precipitation, Climate, Offsets, RainPeriod, Seasons};
+    use pz_sim::GameClock;
+    // Below the threshold nothing falls; above it the amount scales with the strength.
+    assert_eq!(precipitation(10.0, 0.5, 0.0, 0.3), 0.0);
+    let p = RainPeriod { start_hours: 100.0, duration: 20.0, strength: 1.0, rain_threshold: 0.2 };
+    assert_eq!(p.intensity(99.0), 0.0);
+    assert_eq!(p.intensity(120.5), 0.0);
+    let mid: Vec<f32> = (0..200).map(|i| p.intensity(105.0 + i as f64 * 0.05)).collect();
+    assert!(mid.iter().all(|r| (0.0..=1.0).contains(r)));
+    assert!(mid.iter().any(|&r| r > 0.2), "a strong front must rain at some point");
+
+    let mut clock = GameClock::default();
+    let o = Offsets { a: 1.0, b: 2.0, c: -1.0, d: -2.0 };
+    let mut cl = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+    assert_eq!(cl.rain(), 0.0);
+    cl.start_rain(10.0, 1.0, 0.0);
+    cl.world_age_hours += 5.0;
+    let rain = cl.rain();
+    assert!(rain > 0.0, "{rain}");
+    // Rain narrows what zombies see: -2.5 * rain from the 20-square base.
+    let w = clock.weather_now(rain);
+    assert!((w.vision_radius() - (20.0 - 2.5 * rain).max(10.0)).abs() < 1e-3);
+    cl.world_age_hours += 6.0;
+    assert_eq!(cl.rain(), 0.0, "the front has passed");
+}

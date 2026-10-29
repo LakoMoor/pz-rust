@@ -195,12 +195,14 @@ pub struct Climate {
     pub day: i32,
     /// Hours since the world began (continuous, includes the current day's progress).
     pub world_age_hours: f64,
+    /// The rain front in progress, if any.
+    pub period: Option<RainPeriod>,
     last_hour: f32,
 }
 
 impl Climate {
     pub fn new(seasons: Seasons, offsets: Offsets, year: i32, month: i32, day: i32, clock: &mut GameClock) -> Self {
-        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, last_hour: clock.hour };
+        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, period: None, last_hour: clock.hour };
         c.start_day(clock);
         c
     }
@@ -231,5 +233,49 @@ impl Climate {
     /// Current air mass (wind and temperature offset) at the clock's time.
     pub fn air(&self, clock: &GameClock) -> AirMass {
         AirMass::at(self.offsets, self.world_age_hours, clock.hour, 0.5, self.sandbox_rain)
+    }
+}
+
+/// Precipitation of a weather period at `hours` (`WeatherPeriod.update`): a noise value in 0..1 that must beat the
+/// period's rain threshold, rescaled above it and multiplied by the period's current strength.
+pub fn precipitation(hours: f64, front_strength: f32, current_strength: f32, rain_threshold: f32) -> f32 {
+    let noise = 0.3 * front_strength + simplex(hours, 24000.0) as f32 * (1.0 - 0.3 * front_strength);
+    let noise = (noise + 1.0) * 0.5;
+    if noise > rain_threshold { (noise - rain_threshold) / (1.0 - rain_threshold) * current_strength } else { 0.0 }
+}
+
+/// A rain front. The original builds it from a chain of stages (`WeatherPeriod.createAndAddStage`) whose strength
+/// rises and falls; this keeps the same precipitation formula but replaces the stage chain with one smooth
+/// rise-and-fall envelope, so rain *amount* over a front is an approximation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RainPeriod {
+    pub start_hours: f64,
+    pub duration: f64,
+    /// Peak strength 0..1 of the front.
+    pub strength: f32,
+    pub rain_threshold: f32,
+}
+
+impl RainPeriod {
+    pub fn is_over(&self, hours: f64) -> bool { hours >= self.start_hours + self.duration }
+
+    /// Rain intensity 0..1 at `hours` (0 outside the period).
+    pub fn intensity(&self, hours: f64) -> f32 {
+        if hours < self.start_hours || self.is_over(hours) { return 0.0; }
+        let t = ((hours - self.start_hours) / self.duration) as f32;
+        let current = self.strength * (std::f32::consts::PI * t).sin();
+        precipitation(hours, self.strength, current, self.rain_threshold)
+    }
+}
+
+impl Climate {
+    /// Start a rain front now, lasting `duration` hours.
+    pub fn start_rain(&mut self, duration: f64, strength: f32, rain_threshold: f32) {
+        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength, rain_threshold });
+    }
+
+    /// Current rain intensity (feeds the zombies' vision penalty).
+    pub fn rain(&self) -> f32 {
+        self.period.map_or(0.0, |p| p.intensity(self.world_age_hours))
     }
 }
