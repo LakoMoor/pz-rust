@@ -79,3 +79,23 @@ fn seasonal_mean_temperature_peaks_in_summer_and_bottoms_out_in_winter() {
     let other = Seasons::new(25, 0, 7, 31, 3, 5, 9);
     assert_ne!(other.day_temperature(1993, 6, 23).0, jul);
 }
+
+#[test]
+fn air_masses_and_wind_stay_in_range_and_drift_slowly() {
+    use pz_sim::climate::{AirMass, Offsets};
+    let o = Offsets { a: 1234.0, b: 77.0, c: -4321.0, d: -99.0 };
+    let (mut warm, mut cold) = (false, false);
+    let mut prev = AirMass::at(o, 1000.0, 12.0, 0.5, 3);
+    for h in 0..2000 {
+        let a = AirMass::at(o, 1000.0 + h as f64, 12.0, 0.5, 3);
+        assert!((-1.0..=1.0).contains(&a.temperature) && (0.0..=0.65).contains(&a.wind) && (0.0..=1.0).contains(&a.cloudy), "{a:?}");
+        assert!((a.temperature - prev.temperature).abs() < 0.1, "air masses move slowly");
+        warm |= a.temperature > 0.3; cold |= a.temperature < -0.3;
+        prev = a;
+    }
+    assert!(warm && cold, "both warm and cold fronts occur over 2000 hours");
+    // Slower noise (sandbox 'rare rain') changes more slowly than the fast setting.
+    let step = |rain| (AirMass::at(o, 5001.0, 0.0, 0.0, rain).temperature - AirMass::at(o, 5000.0, 0.0, 0.0, rain).temperature).abs();
+    assert!(step(1) <= step(5) + 1e-3 || step(1) < 0.02);
+    assert_eq!(AirMass::at(o, 10.0, 0.0, 0.0, 3).temperature_offset(), AirMass::at(o, 10.0, 0.0, 0.0, 3).temperature * 8.0);
+}

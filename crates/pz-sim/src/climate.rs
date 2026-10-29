@@ -132,3 +132,47 @@ impl Seasons {
         (avg, avg + self.temp_diff as f32 * (noise * 2.0 - 1.0))
     }
 }
+
+use crate::simplex::noise as simplex;
+
+/// World-age driven weather noise from `ClimateValues.updateValues`: air masses, temperature offset and wind.
+/// The four offsets are random per save (`ClimateManager.simplexOffsetA..D`); callers supply them.
+#[derive(Clone, Copy, Debug)]
+pub struct Offsets { pub a: f64, pub b: f64, pub c: f64, pub d: f64 }
+
+/// `getAirMassNoiseFrequencyMod`: hours per noise unit for the sandbox rain setting (1..5; 3 = normal).
+pub fn air_mass_frequency(sandbox_rain: i32) -> f64 {
+    match sandbox_rain { 1 => 300.0, 2 => 240.0, 4 => 145.0, 5 => 120.0, _ => 166.0 }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AirMass {
+    /// -1..1; positive is a warm, clear front.
+    pub temperature: f32,
+    /// -1..1
+    pub humidity_noise: f32,
+    /// 0..0.65
+    pub wind: f32,
+    /// `cloudyT`: 0..1, how overcast the sky is.
+    pub cloudy: f32,
+}
+
+impl AirMass {
+    /// `world_age_hours` is the time since the world began; `day_perc` the day's position in the daylight cycle
+    /// (`Daylight`'s `perc2`, 0 in midwinter .. 1 in midsummer); `hour` the hour of day.
+    pub fn at(o: Offsets, world_age_hours: f64, hour: f32, day_perc: f32, sandbox_rain: i32) -> AirMass {
+        let f = air_mass_frequency(sandbox_rain);
+        let temperature = simplex(o.a, (world_age_hours - 48.0) / f) as f32;
+        let humidity_noise = simplex(o.c, world_age_hours / f) as f32;
+        let wind_mod = 1.0 - (temperature + 1.0) * 0.5;
+        let wind_mod2 = 1.0 - day_perc * 0.4;
+        let base = (simplex(world_age_hours / 40.0, o.a) as f32 + 1.0) * 0.5;
+        let wind = base * wind_mod * wind_mod2 * 0.65;
+        let _ = hour;
+        let cloudy = (1.0 - ((temperature + 0.8) * 0.625).clamp(0.0, 1.0)) * 0.8;
+        AirMass { temperature, humidity_noise, wind, cloudy: (cloudy + wind).clamp(0.0, 1.0) }
+    }
+
+    /// The air-mass term added to the seasonal mean temperature (`airMassTemperature * 8`).
+    pub fn temperature_offset(&self) -> f32 { self.temperature * 8.0 }
+}
