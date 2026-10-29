@@ -10,6 +10,7 @@ A from-scratch Rust reimplementation of Project Zomboid (Build 42), in the spiri
 
 Crates: `pz-formats` (pack / tiles / lotheader / lotpack readers), `pz-world` (lazy cell map + collision flags),
 `pz-scripts` (parser for the game's item/recipe/entity script files: 1,004 files, 5,105 items),
+`pz-items` (typed item database + weight-limited inventory),
 `pz-sim` (fixed 30 Hz tick, player, zombies), `pz-viewer` (wgpu + winit isometric renderer).
 
 ```
