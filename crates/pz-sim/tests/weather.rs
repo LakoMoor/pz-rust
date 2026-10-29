@@ -33,3 +33,12 @@ fn clock_advances_one_day_per_day_length() {
     for _ in 0..(60.0 * TICK_HZ) as u32 / 2 { c.tick(); }
     assert!((c.hour - 12.0).abs() < 0.01, "{}", c.hour);
 }
+
+#[test]
+fn sight_setting_and_eating_scale_before_the_clamp() {
+    let night = Weather { rain: 0.0, fog: 0.0, light: 0.0 }; // base radius 15
+    assert_eq!(night.vision_radius_for(Sight::Eagle, 1.0, false), 20.0); // 26.25 clamps down
+    assert_eq!(night.vision_radius_for(Sight::Poor, 1.0, false), 10.0); // 5.25 clamps up
+    assert_eq!(night.vision_radius_for(Sight::Normal, 1.0, true), 10.0); // 7.5 clamps up
+    assert_eq!(Weather::default().vision_radius_for(Sight::Normal, 1.25, false), 16.0);
+}

@@ -178,12 +178,24 @@ impl Default for Weather {
 
 impl Weather {
     /// Vision radius in squares: 20 minus the worst of the darkness and rain+fog penalties, clamped to 10..20.
-    pub fn vision_radius(&self) -> f32 {
+    pub fn vision_radius(&self) -> f32 { self.vision_radius_for(Sight::Normal, 1.0, false) }
+
+    /// `IsoZombie.getVisionRadiusAdjusted` + clamp: the sandbox sight setting scales the radius, worn items divide it
+    /// (`worn_modifier` >= 1 for masks and the like), eating a body halves it; the clamp to 10..20 comes last.
+    pub fn vision_radius_for(&self, sight: Sight, worn_modifier: f32, eating: bool) -> f32 {
         let dark = (1.0 - self.light) * 5.0;
         let wet = self.rain * 2.5 + self.fog * 7.0;
-        (ZOMBIE_SIGHT - dark.max(wet)).clamp(10.0, 20.0)
+        let mut r = ZOMBIE_SIGHT - dark.max(wet);
+        r *= match sight { Sight::Eagle => 1.75, Sight::Normal => 1.0, Sight::Poor => 0.35 };
+        r /= worn_modifier;
+        if eating { r *= 0.5; }
+        r.clamp(10.0, 20.0)
     }
 }
+
+/// Sandbox "zombie sight" setting (`lore.sight`): 1 = eagle-eyed, 2 = normal, 3 = poor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sight { Eagle, Normal, Poor }
 const ATTACK_RANGE: f32 = 0.9;
 const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 
