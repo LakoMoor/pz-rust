@@ -12,6 +12,9 @@ const HALF_H: f32 = 32.0;
 const LEVEL_PX: f32 = 192.0; // height of one floor on screen (3 tiles)
 const MAX_Z: usize = 7;
 
+/// Item scripts, the wielded gun's definition and the player's pockets (spare rounds for reloading).
+struct Kit { db: pz_items::ItemDb, def: pz_items::ItemDef, inv: pz_items::Inventory }
+
 struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie>, clock: GameClock }
 
 /// Continuous tile coordinates -> screen-space (pixel) position.
@@ -224,7 +227,7 @@ struct Gfx { window: Arc<Window>, surface: wgpu::Surface<'static>, config: wgpu:
 
 struct App {
     args: Args, scene: Scene, gfx: Option<Gfx>, center: [f32; 2], zoom: f32,
-    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon, gun: Option<pz_sim::firearm::Gun>, net: Option<pz_net::udp::UdpClient>,
+    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon, gun: Option<pz_sim::firearm::Gun>, kit: Option<Kit>, net: Option<pz_net::udp::UdpClient>,
 }
 
 impl ApplicationHandler for App {
@@ -271,6 +274,12 @@ impl ApplicationHandler for App {
                             let scn = &mut self.scene;
                             let shot = scn.player.shoot(&mut scn.zombies, g);
                             log::info!("shot: {shot:?}, {} rounds left", g.ammo);
+                        }
+                    }
+                    if k == KeyCode::KeyR && event.state == ElementState::Pressed && !event.repeat && self.net.is_none() {
+                        if let (Some(g), Some(kit)) = (self.gun.as_mut(), self.kit.as_mut()) {
+                            let n = pz_net::reload_from_inventory(&kit.def, g, &mut kit.inv, &kit.db);
+                            log::info!("reloaded {n} rounds, {} in the magazine", g.ammo);
                         }
                     }
                     if k == KeyCode::KeyE && event.state == ElementState::Pressed && !event.repeat {
@@ -331,7 +340,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.center = player_cam(&self.scene.player);
-                g.window.set_title(&format!("pz-rust | {:02}:{:02} | health {:.0}{}", self.scene.clock.hour as u32, (self.scene.clock.hour.fract() * 60.0) as u32, self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
+                g.window.set_title(&format!("pz-rust | {:02}:{:02} | ammo {} | health {:.0}{}", self.scene.clock.hour as u32, (self.scene.clock.hour.fract() * 60.0) as u32, self.gun.map_or(0, |g| g.ammo), self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
                 let size = (g.config.width, g.config.height);
                 let (mut inst, batches) = self.scene.build(self.center, size, self.zoom);
                 g.r.prepare(&self.scene.assets, &mut inst, &batches);
@@ -374,8 +383,15 @@ fn main() {
         .unwrap_or(Weapon::FISTS);
     log::info!("weapon: {weapon:?}");
     let net = app_net(&args);
-    let gun = pz_items::ItemDb::load(&args.pz.join("media").join("scripts")).ok()
-        .and_then(|db| db.get("Base.Pistol").and_then(pz_net::gun_from_item));
-    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon, gun, net };
+    let db = pz_items::ItemDb::load(&args.pz.join("media").join("scripts")).ok();
+    let def = db.as_ref().and_then(|db| db.get("Base.Pistol").cloned());
+    let gun = def.as_ref().and_then(pz_net::gun_from_item);
+    // Start with two spare magazines' worth of rounds.
+    let kit = db.zip(def).map(|(db, def)| {
+        let mut inv = pz_items::Inventory::player();
+        let _ = inv.add(&db, "Base.Bullets9mm", 30);
+        Kit { db, def, inv }
+    });
+    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon, gun, kit, net };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
 }
