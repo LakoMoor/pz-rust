@@ -56,11 +56,21 @@ impl Player {
         if self.swing_cd > 0 { return 0; }
         self.swing_cd = weapon.cooldown_ticks;
         let before = zombies.len();
+        let mut struck = false;
         for zb in zombies.iter_mut().filter(|zb| zb.z == self.z) {
             let d = [zb.pos[0] - self.pos[0], zb.pos[1] - self.pos[1]];
             let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
             let front = dist < 1e-4 || (d[0] * self.facing[0] + d[1] * self.facing[1]) / dist > 0.5;
-            if dist <= weapon.range && front { zb.health -= weapon.damage; }
+            if dist <= weapon.range && front {
+                self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+                let crit = (self.rng % 100) < weapon.crit_chance as u32;
+                zb.hit(weapon.damage, crit, weapon.crit_mult, self.pos);
+                struck = true;
+            }
+        }
+        // Character.Hit: addWorldSoundUnlessInvisible(5, 1, false)
+        if struck {
+            self.sounds.push(WorldSound { pos: self.pos, z: self.z, radius: 5.0, volume: 1.0, zombie_ignore_dist: 0.0, source_is_zombie: false });
         }
         zombies.retain(|zb| zb.health > 0.0);
         before - zombies.len()
@@ -156,20 +166,41 @@ const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 /// A zombie that shambles straight toward a visible player on the same floor.
 /// Melee weapon stats (damage and range follow the item scripts' units).
 #[derive(Clone, Copy, Debug)]
-pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32 }
+pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32, pub crit_chance: f32, pub crit_mult: f32 }
 
 impl Weapon {
-    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30 };
+    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0 };
 }
 
 #[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, idle_timer: 0.0, wander: None, rng };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng };
         zb.idle_timer = zb.pick_wander_interval();
         zb
+    }
+
+    /// IsoGameCharacter.Hit / processHitDamage for a player's melee hit (default traits, no skill).
+    /// Returns the damage dealt. `from` is the wielder's position.
+    pub fn hit(&mut self, base_damage: f32, crit: bool, crit_mult: f32, from: [f32; 2]) -> f32 {
+        // Repeated hits on one zombie scale up after the third (hitTime >= 4: x (hitTime - 2) * 1.5).
+        self.hit_time += 1;
+        let mut dmg = base_damage;
+        if self.hit_time >= 4 { dmg *= (self.hit_time as f32 - 2.0) * 1.5; }
+        // From behind (dot of wielder->zombie with the zombie's facing > -0.3): x1.5.
+        let d = [self.pos[0] - from[0], self.pos[1] - from[1]];
+        let l = d[0].hypot(d[1]).max(1e-6);
+        if (d[0] * self.facing[0] + d[1] * self.facing[1]) / l > -0.3 { dmg *= 1.5; }
+        if crit { dmg *= crit_mult.max(2.0); }
+        self.health -= dmg;
+        if self.health > 0.0 {
+            // Approximation: a surviving zombie staggers for ~0.5 s per unit of hit force.
+            let force = (dmg * 2.0).min(2.0);
+            self.stagger = (force * 15.0) as u32;
+        }
+        dmg
     }
 
     /// xorshift32 in `0..n` (deterministic per zombie).
@@ -200,6 +231,7 @@ impl Zombie {
 
     pub fn tick(&mut self, target: &mut Player, world: &mut World) {
         self.cooldown = self.cooldown.saturating_sub(1);
+        if self.stagger > 0 { self.stagger -= 1; return; }
         if target.z != self.z { self.idle(world); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();

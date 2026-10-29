@@ -15,6 +15,8 @@ pub struct ItemDef {
     pub max_damage: f32,
     pub max_range: f32,
     pub swing_time: f32,
+    pub crit_chance: f32,
+    pub crit_dmg_multiplier: f32,
 }
 
 #[derive(Default)]
@@ -34,6 +36,8 @@ fn def(module: &str, b: &Block) -> ItemDef {
         max_damage: num(b, "MaxDamage"),
         max_range: num(b, "MaxRange"),
         swing_time: num(b, "Swingtime"),
+        crit_chance: num(b, "CriticalChance"),
+        crit_dmg_multiplier: num(b, "CritDmgMultiplier"),
     }
 }
 
