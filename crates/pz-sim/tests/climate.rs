@@ -57,3 +57,25 @@ fn the_clock_takes_dawn_and_dusk_from_the_date() {
     c.set_date(1993, 5, 22);
     assert!(dark > 0.02 && c.night_strength() == 0.0, "{dark}");
 }
+
+#[test]
+fn seasonal_mean_temperature_peaks_in_summer_and_bottoms_out_in_winter() {
+    use pz_sim::climate::Seasons;
+    let s = Seasons::default();
+    let mean = |m, d| s.day_temperature(1993, m, d).0;
+    // Hottest around Jun 22 + 31 days (late July), coldest around late January.
+    let (jul, jan, apr, oct) = (mean(6, 23), mean(0, 22), mean(3, 15), mean(9, 15));
+    assert!(jul > 20.0 && jul < 30.0, "july {jul}");
+    assert!(jan > -6.0 && jan < 5.0, "january {jan}");
+    assert!(jul > apr && apr > jan && oct > jan);
+    // The mean is smooth day to day and across the new year; the actual temperature wiggles by +-tempDiff.
+    assert!((mean(11, 31) - s.day_temperature(1994, 0, 1).0).abs() < 1.0);
+    for dd in 1..28 { assert!((mean(5, dd) - mean(5, dd + 1)).abs() < 1.0); }
+    for dd in 1..28 {
+        let (m, t) = s.day_temperature(1993, 5, dd);
+        assert!((t - m).abs() <= 7.0 + 1e-3);
+    }
+    // A different save (other seeds / tempDiff) gives a different year.
+    let other = Seasons::new(25, 0, 7, 31, 3, 5, 9);
+    assert_ne!(other.day_temperature(1993, 6, 23).0, jul);
+}
