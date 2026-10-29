@@ -276,8 +276,8 @@ impl ApplicationHandler for App {
                             log::info!("shot: {shot:?}, {} rounds left", g.ammo);
                         }
                     }
-                    if k == KeyCode::KeyR && event.state == ElementState::Pressed && !event.repeat && self.net.is_none() {
-                        if let (Some(g), Some(kit)) = (self.gun.as_mut(), self.kit.as_mut()) {
+                    if k == KeyCode::KeyR && event.state == ElementState::Pressed && !event.repeat {
+                        if let Some(net) = self.net.as_mut() { let _ = net.send(&pz_net::ClientMsg::Reload); } else if let (Some(g), Some(kit)) = (self.gun.as_mut(), self.kit.as_mut()) {
                             let n = pz_net::reload_from_inventory(&kit.def, g, &mut kit.inv, &kit.db);
                             log::info!("reloaded {n} rounds, {} in the magazine", g.ammo);
                         }

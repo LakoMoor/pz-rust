@@ -18,6 +18,8 @@ pub enum ClientMsg {
     Interact,
     /// Fire the equipped gun in the facing direction.
     Shoot,
+    /// Top up the magazine from the rounds in the player's pockets.
+    Reload,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +66,7 @@ impl ClientMsg {
             ClientMsg::Attack => w.u8(2),
             ClientMsg::Interact => w.u8(3),
             ClientMsg::Shoot => w.u8(4),
+            ClientMsg::Reload => w.u8(5),
         }
         w.0
     }
@@ -74,6 +77,7 @@ impl ClientMsg {
             2 => Ok(ClientMsg::Attack),
             3 => Ok(ClientMsg::Interact),
             4 => Ok(ClientMsg::Shoot),
+            5 => Ok(ClientMsg::Reload),
             t => Err(DecodeError::BadTag(t)),
         }
     }
@@ -128,22 +132,32 @@ pub struct Server {
     /// Firearm template: every joining player gets their own loaded copy.
     gun: Option<Gun>,
     guns: BTreeMap<ClientId, Gun>,
+    /// Item scripts, the gun's definition and the spare rounds each joining player starts with.
+    kit: Option<(pz_items::ItemDb, pz_items::ItemDef, u32)>,
+    packs: BTreeMap<ClientId, pz_items::Inventory>,
     /// Game time; sets how far zombies see.
     pub clock: GameClock,
 }
 
 impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default(), gun: None, guns: BTreeMap::new() }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default(), gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
     pub fn set_weapon(&mut self, w: Weapon) { self.weapon = w; }
     /// Give joining players this (loaded) firearm; `Shoot` does nothing without one.
     pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
+    /// Enable reloading: `def` is the wielded firearm's script and each player joins carrying `spare_rounds` of its ammo.
+    pub fn set_ammo_kit(&mut self, db: pz_items::ItemDb, def: pz_items::ItemDef, spare_rounds: u32) { self.kit = Some((db, def, spare_rounds)); }
     pub fn join(&mut self, id: ClientId, x: f32, y: f32) { self.players.insert(id, Player::new(x, y));
         if let Some(g) = self.gun { self.guns.insert(id, g); }
+        if let Some((db, def, spare)) = &self.kit {
+            let mut inv = pz_items::Inventory::player();
+            if let Some(round) = def.ammo_type.as_deref().and_then(|a| db.ammo_item(a)) { let _ = inv.add(db, round, *spare); }
+            self.packs.insert(id, inv);
+        }
     }
-    pub fn leave(&mut self, id: ClientId) { self.players.remove(&id); self.inputs.remove(&id); self.guns.remove(&id); }
+    pub fn leave(&mut self, id: ClientId) { self.players.remove(&id); self.inputs.remove(&id); self.guns.remove(&id); self.packs.remove(&id); }
 
     pub fn handle(&mut self, id: ClientId, msg: ClientMsg) {
         if !self.players.contains_key(&id) { return; }
@@ -160,6 +174,11 @@ impl Server {
             }
             ClientMsg::Shoot => {
                 if let (Some(p), Some(g)) = (self.players.get_mut(&id), self.guns.get_mut(&id)) { p.shoot(&mut self.zombies, g); }
+            }
+            ClientMsg::Reload => {
+                if let (Some((db, def, _)), Some(g), Some(inv)) = (&self.kit, self.guns.get_mut(&id), self.packs.get_mut(&id)) {
+                    reload_from_inventory(def, g, inv, db);
+                }
             }
             ClientMsg::Interact => {
                 if let Some(p) = self.players.get(&id) { p.interact(&mut self.world); }

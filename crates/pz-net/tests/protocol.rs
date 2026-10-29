@@ -124,3 +124,28 @@ fn snapshots_report_each_players_remaining_ammo() {
     let snap = ServerMsg::Snapshot { tick: 1, you: 1, players, zombies: vec![], doors: vec![] };
     assert_eq!(ServerMsg::decode(&snap.encode()), Ok(snap));
 }
+
+#[test]
+fn reload_message_refills_from_the_players_pockets() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let scripts = std::path::PathBuf::from(dir).join("media").join("scripts");
+    if !scripts.is_dir() { return; }
+    assert_eq!(ClientMsg::decode(&ClientMsg::Reload.encode()), Ok(ClientMsg::Reload));
+    let db = pz_items::ItemDb::load(&scripts).unwrap();
+    let def = db.get("Base.Pistol").cloned().unwrap();
+    let mut gun = gun_from_item(&def).unwrap();
+    gun.ammo = 1;
+    let mut s = Server::new(World::new("nonexistent"), vec![]);
+    s.set_gun(gun);
+    s.set_ammo_kit(db, def, 20);
+    s.join(1, 0.0, 0.0);
+    let ammo = |s: &mut Server| { let ServerMsg::Snapshot { players, .. } = s.tick(); players[0].ammo };
+    assert_eq!(ammo(&mut s), 1);
+    s.handle(1, ClientMsg::Reload);
+    assert_eq!(ammo(&mut s), 15);
+    // 20 spare - 14 used = 6 left: one more reload cannot fill it past the pockets.
+    for _ in 0..15 { s.tick(); s.handle(1, ClientMsg::Shoot); for _ in 0..13 { s.tick(); } }
+    assert_eq!(ammo(&mut s), 0);
+    s.handle(1, ClientMsg::Reload);
+    assert_eq!(ammo(&mut s), 6);
+}
