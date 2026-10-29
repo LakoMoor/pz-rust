@@ -158,6 +158,8 @@ impl Server {
             });
             if let Some(p) = nearest { zb.tick(p, &mut self.world); }
         }
+        let sounds: Vec<_> = self.players.values_mut().flat_map(|p| std::mem::take(&mut p.sounds)).collect();
+        if !sounds.is_empty() { for zb in &mut self.zombies { zb.hear(&sounds); } }
         self.tick += 1;
         ServerMsg::Snapshot {
             tick: self.tick,

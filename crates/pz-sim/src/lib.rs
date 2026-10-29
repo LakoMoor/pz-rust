@@ -13,7 +13,7 @@ pub struct Input {
     pub run: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Player {
     /// Continuous tile coordinates; square (x, y) is centred on integer coordinates.
     pub pos: [f32; 2],
@@ -27,21 +27,27 @@ pub struct Player {
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
+    step_clock: u32,
+    rng: u32,
+    /// Sounds made this tick (footsteps); drained by the caller.
+    pub sounds: Vec<WorldSound>,
 }
 
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, facing: [1.0, 0.0], swing_cd: 0 } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     pub fn tick(&mut self, input: Input, world: &mut World) {
         self.swing_cd = self.swing_cd.saturating_sub(1);
+        let moved_from = self.pos;
         let len = (input.dir[0] * input.dir[0] + input.dir[1] * input.dir[1]).sqrt();
         if len > 1e-4 { self.facing = [input.dir[0] / len, input.dir[1] / len]; }
         let before = square_of(self.pos);
         self.move_xy(input, world);
         self.update_level(before, world);
+        self.footsteps(input, moved_from, world);
     }
 
     /// Swing `weapon` in the facing direction; hits every zombie in range and in the front cone.
@@ -58,6 +64,23 @@ impl Player {
         }
         zombies.retain(|zb| zb.health > 0.0);
         before - zombies.len()
+    }
+
+    /// IsoGameCharacter.DoFootstepSound: volume by gait (walk 0.5, run 1.3), x1.4, radius ceil(vol*10),
+    /// halved indoors, emitted with probability 1/2. Step cadence (every 15 / 10 ticks) is approximate.
+    fn footsteps(&mut self, input: Input, from: [f32; 2], world: &mut World) {
+        if self.pos == from { self.step_clock = 0; return; }
+        self.step_clock += 1;
+        let period = if input.run { 10 } else { 15 };
+        if self.step_clock % period != 0 { return; }
+        self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+        if self.rng % 2 != 0 { return; }
+        let (x, y) = square_of(self.pos);
+        let indoors = world.ensure(x, y) && world.column(x, y, self.z).is_some_and(|c| c.room != -1);
+        let volume = (if input.run { 1.3 } else { 0.5 }) * 1.4;
+        let mut rad = (volume * 10.0f32).ceil();
+        if indoors { rad = (rad * 0.5).floor(); }
+        self.sounds.push(WorldSound { pos: self.pos, z: self.z, radius: rad, volume: rad, zombie_ignore_dist: 0.0, source_is_zombie: false });
     }
 
     /// Open/close the nearest door on the player's square or an orthogonal neighbour.
