@@ -211,14 +211,26 @@ impl Weapon {
 #[derive(Clone)]
 pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub on_floor: bool, pub knocked_down: bool, path: Vec<(i32, i32)>, stuck: u32, pub reanimate_timer: f32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32,
     /// Per-zombie sight setting (sandbox `lore.sight`).
-    pub sight: Sight }
+    pub sight: Sight,
+    /// Crawler: `IsoZombie.doCrawlerSpeed` speedMod (0.3 + 0..0.15) instead of a shambler's (about 0.625).
+    crawl_mod: Option<f32> }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None };
         zb.idle_timer = zb.pick_wander_interval();
         zb
     }
+
+    pub fn is_crawler(&self) -> bool { self.crawl_mod.is_some() }
+
+    /// Turn into a crawler (`setCrawler(true)`): much slower, speedMod rolled once.
+    pub fn set_crawler(&mut self) {
+        if self.crawl_mod.is_none() { self.crawl_mod = Some(0.3 + self.rand(1500) as f32 / 10000.0); }
+    }
+
+    /// Walking speed in tiles/second; `ZOMBIE_SPEED` is calibrated to an average shambler (speedMod 0.625).
+    fn speed(&self) -> f32 { ZOMBIE_SPEED * self.crawl_mod.map_or(1.0, |m| m / 0.625) }
 
     /// IsoZombie.Hit -> IsoGameCharacter.Hit/processHitDamage/hitConsequences for a player's melee hit
     /// (default traits: Strength 5 so shovingMod 1.0, full endurance). Returns the damage dealt.
@@ -273,7 +285,7 @@ impl Zombie {
         }
         if let Some(t) = self.wander {
             let d = [t[0] - self.pos[0], t[1] - self.pos[1]];
-            if d[0].hypot(d[1]) < 0.2 { self.wander = None; } else { slide(&mut self.pos, self.z, d, ZOMBIE_SPEED * 0.5, world, false); }
+            if d[0].hypot(d[1]) < 0.2 { self.wander = None; } else { { let v = self.speed() * 0.5; slide(&mut self.pos, self.z, d, v, world, false); } }
         }
     }
 
@@ -335,7 +347,8 @@ impl Zombie {
     }
 
     fn step_toward(&mut self, d: [f32; 2], world: &mut World) {
-        slide(&mut self.pos, self.z, d, ZOMBIE_SPEED, world, false);
+        let v = self.speed();
+        slide(&mut self.pos, self.z, d, v, world, false);
     }
 }
 

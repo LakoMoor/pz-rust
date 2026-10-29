@@ -55,3 +55,16 @@ fn a_poor_sighted_zombie_loses_a_distant_player_that_a_normal_one_sees() {
     assert!(normal.pos[0] > 0.0, "normal zombie should approach, x={}", normal.pos[0]);
     assert!(poor.pos[0].abs() < normal.pos[0], "poor zombie should not chase: {} vs {}", poor.pos[0], normal.pos[0]);
 }
+
+#[test]
+fn crawlers_are_roughly_half_as_fast() {
+    use pz_world::World;
+    let mut w = World::new(std::path::PathBuf::from("."));
+    let mut p = Player::new(15.0, 0.0);
+    let (mut walker, mut crawler) = (Zombie::new(0.0, 0.0, 0), Zombie::new(0.0, 0.0, 0));
+    crawler.set_crawler();
+    assert!(crawler.is_crawler() && !walker.is_crawler());
+    for _ in 0..60 { walker.tick(&mut p, &mut w); crawler.tick(&mut p, &mut w); }
+    let ratio = crawler.pos[0] / walker.pos[0];
+    assert!((0.48..=0.75).contains(&ratio), "ratio {ratio}");
+}
