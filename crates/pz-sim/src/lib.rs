@@ -122,9 +122,9 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
 }
 
 /// A hit-point scale comparable to weapon damages in the item scripts (e.g. 0.4..0.8 per swing for blades).
-const ZOMBIE_HEALTH: f32 = 3.0;
+const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keeps the sim deterministic
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
-const ZOMBIE_SIGHT: f32 = 14.0;
+const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
 const ATTACK_RANGE: f32 = 0.9;
 const ATTACK_DAMAGE: f32 = 12.0;
 const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
