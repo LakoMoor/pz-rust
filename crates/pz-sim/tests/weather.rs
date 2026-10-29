@@ -42,3 +42,16 @@ fn sight_setting_and_eating_scale_before_the_clamp() {
     assert_eq!(night.vision_radius_for(Sight::Normal, 1.0, true), 10.0); // 7.5 clamps up
     assert_eq!(Weather::default().vision_radius_for(Sight::Normal, 1.25, false), 16.0);
 }
+
+#[test]
+fn a_poor_sighted_zombie_loses_a_distant_player_that_a_normal_one_sees() {
+    use pz_world::World;
+    let mut w = World::new(std::path::PathBuf::from("."));
+    let mk = |sight| { let mut z = Zombie::new(0.0, 0.0, 0); z.sight = sight; z };
+    let (mut normal, mut poor) = (mk(Sight::Normal), mk(Sight::Poor));
+    let mut p = Player::new(14.0, 0.0);
+    let night = Weather { rain: 0.0, fog: 0.0, light: 0.0 }; // radius 15 normal, 10 poor
+    for _ in 0..5 { normal.tick_in(&mut p, &mut w, &night); poor.tick_in(&mut p, &mut w, &night); }
+    assert!(normal.pos[0] > 0.0, "normal zombie should approach, x={}", normal.pos[0]);
+    assert!(poor.pos[0].abs() < normal.pos[0], "poor zombie should not chase: {} vs {}", poor.pos[0], normal.pos[0]);
+}
