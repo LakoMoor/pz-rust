@@ -89,6 +89,13 @@ impl World {
         self.column(x, y, z).map_or(0, |c| c.names.iter().filter_map(|n| self.flags.get(*n)).fold(0, |a, b| a | b))
     }
 
+    /// True if there is a floor (or roof deck) tile to stand on at level `z`.
+    /// Squares above staircases only carry railings, so they count as holes.
+    pub fn has_floor(&mut self, x: i32, y: i32, z: usize) -> bool {
+        self.ensure(x, y)
+            && self.column(x, y, z).is_some_and(|c| c.names.iter().any(|n| n.starts_with("floors_") || n.starts_with("roofs_")))
+    }
+
     /// Can a walker step from square `from` into the orthogonally adjacent square `to`?
     pub fn can_step(&mut self, from: (i32, i32), to: (i32, i32), z: usize) -> bool {
         let (dx, dy) = (to.0 - from.0, to.1 - from.1);

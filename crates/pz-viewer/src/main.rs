@@ -17,6 +17,12 @@ struct Scene { assets: Assets, world: World, player: Player }
 /// Continuous tile coordinates -> screen-space (pixel) position.
 fn pos_to_screen(p: [f32; 2]) -> [f32; 2] { [(p[0] - p[1]) * HALF_W, (p[0] + p[1]) * HALF_H] }
 
+/// Camera target: the player's feet, raised with their height.
+fn player_cam(p: &Player) -> [f32; 2] {
+    let c = pos_to_screen(p.pos);
+    [c[0], c[1] - p.height * LEVEL_PX]
+}
+
 /// Tile -> screen-space (pixel) position of its diamond centre at z = 0.
 fn tile_to_screen(x: i32, y: i32) -> [f32; 2] { [(x - y) as f32 * HALF_W, (x + y) as f32 * HALF_H] }
 
@@ -74,7 +80,7 @@ impl Scene {
                             // Placeholder body until character models/animations are ported.
                             let f = pos_to_screen(self.player.pos);
                             emit(&mut inst, &mut batches, WHITE, Instance {
-                                pos: [f[0] - 12.0, f[1] + zoff - 90.0], size: [24.0, 90.0], uv: WHITE_UV, color: [0.85, 0.2, 0.15, 1.0], layer: 0.0,
+                                pos: [f[0] - 12.0, f[1] - self.player.height * LEVEL_PX - 90.0], size: [24.0, 90.0], uv: WHITE_UV, color: [0.85, 0.2, 0.15, 1.0], layer: 0.0,
                             });
                         }
                     }
@@ -150,7 +156,7 @@ fn screenshot(a: &Args, path: &PathBuf) {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     let (_ad, device, queue) = request_device(&instance, None);
     let mut r = Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-    let center = pos_to_screen(scene.player.pos);
+    let center = player_cam(&scene.player);
     let t = Instant::now();
     let (mut inst, batches) = scene.build(center, a.size, a.zoom);
     r.prepare(&scene.assets, &mut inst, &batches);
@@ -264,7 +270,7 @@ impl ApplicationHandler for App {
                     self.scene.player.tick(input, &mut self.scene.world);
                     self.acc -= TICK_DT;
                 }
-                self.center = pos_to_screen(self.scene.player.pos);
+                self.center = player_cam(&self.scene.player);
                 let size = (g.config.width, g.config.height);
                 let (mut inst, batches) = self.scene.build(self.center, size, self.zoom);
                 g.r.prepare(&self.scene.assets, &mut inst, &batches);
@@ -289,7 +295,7 @@ fn main() {
     let args = parse_args();
     if let Some(path) = args.shot.clone() { return screenshot(&args, &path); }
     let scene = make_scene(&args);
-    let center = pos_to_screen(scene.player.pos);
+    let center = player_cam(&scene.player);
     let zoom = args.zoom;
     let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0 };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
