@@ -579,6 +579,12 @@ impl GameClock {
         let lerp = (time_lerp_hours(self.hour, lo, hi) * (f.duration / 3.0)).clamp(0.0, 1.0);
         clerp(lerp, 0.0, strength)
     }
+    /// Set dawn and dusk for a calendar date (month 0-based) from the latitude's daylight curve.
+    pub fn set_date(&mut self, year: i32, month: i32, day: i32) {
+        let (dawn, dusk) = climate::Daylight::default().dawn_dusk(year, month, day);
+        self.dawn = dawn;
+        self.dusk = dusk;
+    }
     /// Vision conditions at this time of day, using today's fog and the given rain.
     pub fn weather_now(&self, rain: f32) -> Weather { self.weather(rain, self.fog_intensity()) }
 
