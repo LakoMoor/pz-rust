@@ -328,6 +328,7 @@ impl ApplicationHandler for App {
                     if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, doors, .. })) = net.latest_snapshot() {
                         self.scene.world.set_open_doors(doors.into_iter().map(|(x, y, z)| (x, y, z as usize)));
                         if let Some(me) = players.iter().find(|p| p.id == you) {
+                            if let Some(g) = self.gun.as_mut() { g.ammo = me.ammo as u32; }
                             let pl = &mut self.scene.player;
                             // Snap on floor change or big jumps; otherwise ease toward the server position.
                             let far = (pl.pos[0] - me.pos[0]).abs() + (pl.pos[1] - me.pos[1]).abs() > 3.0;

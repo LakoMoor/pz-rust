@@ -21,7 +21,9 @@ pub enum ClientMsg {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PlayerState { pub id: ClientId, pub pos: [f32; 2], pub z: u8, pub health: f32 }
+pub struct PlayerState { pub id: ClientId, pub pos: [f32; 2], pub z: u8, pub health: f32,
+    /// Rounds left in the player's magazine (0 without a gun).
+    pub ammo: u16 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZombieState { pub pos: [f32; 2], pub z: u8, pub health: f32 }
@@ -35,6 +37,7 @@ pub enum DecodeError { Truncated, BadTag(u8) }
 struct W(Vec<u8>);
 impl W {
     fn u8(&mut self, v: u8) { self.0.push(v); }
+    fn u16(&mut self, v: u16) { self.0.extend_from_slice(&v.to_le_bytes()); }
     fn u32(&mut self, v: u32) { self.0.extend_from_slice(&v.to_le_bytes()); }
     fn f32(&mut self, v: f32) { self.0.extend_from_slice(&v.to_le_bytes()); }
 }
@@ -48,6 +51,7 @@ impl R<'_> {
         Ok(a.try_into().unwrap())
     }
     fn u8(&mut self) -> Result<u8, DecodeError> { Ok(self.take::<1>()?[0]) }
+    fn u16(&mut self) -> Result<u16, DecodeError> { Ok(u16::from_le_bytes(self.take()?)) }
     fn u32(&mut self) -> Result<u32, DecodeError> { Ok(u32::from_le_bytes(self.take()?)) }
     fn f32(&mut self) -> Result<f32, DecodeError> { Ok(f32::from_le_bytes(self.take()?)) }
 }
@@ -80,7 +84,7 @@ impl ServerMsg {
         let ServerMsg::Snapshot { tick, you, players, zombies, doors } = self;
         let mut w = W(vec![]);
         w.u8(2); w.u32(*tick); w.u32(*you); w.u32(players.len() as u32);
-        for p in players { w.u32(p.id); w.f32(p.pos[0]); w.f32(p.pos[1]); w.u8(p.z); w.f32(p.health); }
+        for p in players { w.u32(p.id); w.f32(p.pos[0]); w.f32(p.pos[1]); w.u8(p.z); w.f32(p.health); w.u16(p.ammo); }
         w.u32(zombies.len() as u32);
         for z in zombies { w.f32(z.pos[0]); w.f32(z.pos[1]); w.u8(z.z); w.f32(z.health); }
         w.u32(doors.len() as u32);
@@ -96,7 +100,7 @@ impl ServerMsg {
                 let np = r.u32()?;
                 let mut players = Vec::new();
                 for _ in 0..np {
-                    players.push(PlayerState { id: r.u32()?, pos: [r.f32()?, r.f32()?], z: r.u8()?, health: r.f32()? });
+                    players.push(PlayerState { id: r.u32()?, pos: [r.f32()?, r.f32()?], z: r.u8()?, health: r.f32()?, ammo: r.u16()? });
                 }
                 let nz = r.u32()?;
                 let mut zombies = Vec::new();
@@ -185,7 +189,7 @@ impl Server {
         ServerMsg::Snapshot {
             tick: self.tick,
             you: 0, // filled in per recipient by the transport
-            players: self.players.iter().map(|(id, p)| PlayerState { id: *id, pos: p.pos, z: p.z as u8, health: p.health }).collect(),
+            players: self.players.iter().map(|(id, p)| PlayerState { id: *id, pos: p.pos, z: p.z as u8, health: p.health, ammo: self.guns.get(id).map_or(0, |g| g.ammo as u16) }).collect(),
             zombies: self.zombies.iter().map(|z| ZombieState { pos: z.pos, z: z.z as u8, health: z.health }).collect(),
             doors: self.world.open_doors().into_iter().map(|(x, y, z)| (x, y, z as u8)).collect(),
         }

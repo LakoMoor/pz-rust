@@ -12,7 +12,7 @@ fn messages_round_trip_and_reject_garbage() {
         tick: 3,
         you: 1,
         doors: vec![(5, -3, 1)],
-        players: vec![PlayerState { id: 1, pos: [1.5, 2.5], z: 1, health: 90.0 }],
+        players: vec![PlayerState { id: 1, pos: [1.5, 2.5], z: 1, health: 90.0, ammo: 12 }],
         zombies: vec![ZombieState { pos: [0.0, 4.0], z: 0, health: 3.0 }],
     };
     assert_eq!(ServerMsg::decode(&s.encode()), Ok(s.clone()));
@@ -107,4 +107,20 @@ fn reloading_moves_rounds_from_the_inventory_into_the_magazine() {
     inv.remove(&db, "Base.Bullets9mm", 8);
     assert_eq!(reload_from_inventory(def, &mut gun, &mut inv, &db), 0);
     assert_eq!(gun.ammo, 0);
+}
+
+#[test]
+fn snapshots_report_each_players_remaining_ammo() {
+    use pz_sim::firearm::{Firearm, Gun};
+    let mut s = Server::new(World::new("nonexistent"), vec![]);
+    s.set_gun(Gun { firearm: Firearm { hit_chance: 50.0, min_sight_range: 2.0, max_sight_range: 6.0 }, min_damage: 1.0, max_damage: 1.0, max_range: 10.0, recoil_delay: 1, ammo: 3, sound_radius: 10.0, sound_volume: 10.0 });
+    s.join(1, 0.0, 0.0);
+    s.join(2, 5.0, 0.0);
+    s.handle(1, ClientMsg::Shoot);
+    let ServerMsg::Snapshot { players, .. } = s.tick();
+    let ammo = |id| players.iter().find(|p| p.id == id).unwrap().ammo;
+    assert_eq!((ammo(1), ammo(2)), (2, 3));
+    // The wire format carries it.
+    let snap = ServerMsg::Snapshot { tick: 1, you: 1, players, zombies: vec![], doors: vec![] };
+    assert_eq!(ServerMsg::decode(&snap.encode()), Ok(snap));
 }
