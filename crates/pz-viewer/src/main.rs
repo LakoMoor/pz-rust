@@ -362,7 +362,7 @@ fn main() {
         .and_then(|db| db.get("Base.BaseballBat").map(|b| Weapon {
             damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range,
             cooldown_ticks: (b.swing_time * 10.0) as u32,
-            crit_chance: b.crit_chance, crit_mult: b.crit_dmg_multiplier, push_back_mod: b.push_back_mod, small_blade: b.small_blade,
+            crit_chance: b.crit_chance, crit_mult: b.crit_dmg_multiplier, push_back_mod: b.push_back_mod, small_blade: b.small_blade, sound_radius: b.sound_radius, sound_volume: b.sound_volume,
         }))
         .unwrap_or(Weapon::FISTS);
     log::info!("weapon: {weapon:?}");

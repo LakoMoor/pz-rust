@@ -55,6 +55,10 @@ impl Player {
     pub fn attack(&mut self, zombies: &mut Vec<Zombie>, weapon: &Weapon) -> usize {
         if self.swing_cd > 0 { return 0; }
         self.swing_cd = weapon.cooldown_ticks;
+        // Every swing makes noise, hit or miss.
+        if weapon.sound_radius > 0.0 {
+            self.sounds.push(WorldSound { pos: self.pos, z: self.z, radius: weapon.sound_radius, volume: weapon.sound_volume, zombie_ignore_dist: 0.0, source_is_zombie: false });
+        }
         let before = zombies.len();
         let mut struck = false;
         for zb in zombies.iter_mut().filter(|zb| zb.z == self.z) {
@@ -206,10 +210,12 @@ const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 /// A zombie that shambles straight toward a visible player on the same floor.
 /// Melee weapon stats (damage and range follow the item scripts' units).
 #[derive(Clone, Copy, Debug)]
-pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32, pub crit_chance: f32, pub crit_mult: f32, pub push_back_mod: f32, pub small_blade: bool }
+pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32, pub crit_chance: f32, pub crit_mult: f32, pub push_back_mod: f32, pub small_blade: bool,
+    /// Script `SoundRadius` / `SoundVolume`: the noise of every melee swing (IsoLivingCharacter.AttackWorldSound); 0 = silent.
+    pub sound_radius: f32, pub sound_volume: f32 }
 
 impl Weapon {
-    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false };
+    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false, sound_radius: 0.0, sound_volume: 0.0 };
 }
 
 #[derive(Clone)]

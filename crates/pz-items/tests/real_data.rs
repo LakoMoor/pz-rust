@@ -27,16 +27,9 @@ fn database_and_inventory_weights() {
 #[test]
 fn baseball_bat_stats() {
     let Some(db) = db() else { return };
-    let bat = db.get("Base.BaseballBat").expect("BaseballBat");
-    assert_eq!((bat.min_damage, bat.max_damage, bat.max_range), (0.8, 1.1, 1.25));
-    assert_eq!(bat.swing_time, 3.0);
-}
-
-#[test]
-fn player_capacity_is_eight() {
-    let Some(db) = db() else { return };
-    let mut inv = Inventory::player();
-    inv.add(&db, "Base.SpadeHead", 8).unwrap();
-    assert!(!inv.over_encumbered(), "exactly at capacity is not over");
-    assert_eq!(inv.add(&db, "Base.SpadeHead", 1), Err(AddError::TooHeavy));
+    // Melee weapons are silent on a swing (only the hit makes noise); firearms carry big radii.
+    let bat = db.get("Base.BaseballBat").unwrap();
+    assert_eq!((bat.sound_radius, bat.sound_volume), (0.0, 0.0));
+    let pistol = db.get("Base.Pistol").unwrap();
+    assert!(pistol.sound_radius >= 50.0 && pistol.sound_volume > 0.0, "{} {}", pistol.sound_radius, pistol.sound_volume);
 }

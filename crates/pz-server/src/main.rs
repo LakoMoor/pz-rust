@@ -29,7 +29,7 @@ fn main() {
     let mut game = Server::new(world, zombies);
     // Same weapon as the single-player client: stats come from the game's item scripts.
     if let Some(b) = pz_items::ItemDb::load(&media.join("scripts")).ok().and_then(|db| db.get("Base.BaseballBat").cloned()) {
-        game.set_weapon(pz_sim::Weapon { damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range, cooldown_ticks: (b.swing_time * 10.0) as u32, crit_chance: b.crit_chance, crit_mult: b.crit_dmg_multiplier, push_back_mod: b.push_back_mod, small_blade: b.small_blade });
+        game.set_weapon(pz_sim::Weapon { damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range, cooldown_ticks: (b.swing_time * 10.0) as u32, crit_chance: b.crit_chance, crit_mult: b.crit_dmg_multiplier, push_back_mod: b.push_back_mod, small_blade: b.small_blade, sound_radius: b.sound_radius, sound_volume: b.sound_volume });
     }
     let mut srv = UdpServer::bind(&bind, game, spawn).expect("bind");
     println!("listening {}", srv.local_addr().unwrap());

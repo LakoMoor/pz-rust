@@ -4,7 +4,7 @@ use pz_world::World;
 fn w() -> World { World::new(std::path::PathBuf::from("nonexistent")) }
 
 fn bat() -> Weapon {
-    Weapon { damage: 0.5, range: 1.2, cooldown_ticks: 20, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false }
+    Weapon { damage: 0.5, range: 1.2, cooldown_ticks: 20, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false, sound_radius: 0.0, sound_volume: 0.0 }
 }
 
 /// A zombie facing the wielder at the origin (no back-attack bonus).
@@ -119,4 +119,24 @@ fn a_hit_makes_noise_that_zombies_can_hear() {
     p.attack(&mut vec![z], &weak);
     assert_eq!(p.sounds.len(), 1);
     assert_eq!((p.sounds[0].radius, p.sounds[0].volume), (5.0, 1.0));
+}
+
+#[test]
+fn every_swing_is_heard_with_the_weapons_sound_radius() {
+    let mut world = w();
+    let mut p = Player::new(10.0, 10.0);
+    p.tick(Input { dir: [0.0, 0.0], run: false }, &mut world);
+    p.sounds.clear();
+    let loud = Weapon { sound_radius: 20.0, sound_volume: 25.0, ..bat() };
+    // Nothing in reach: a miss still makes noise.
+    p.attack(&mut vec![], &loud);
+    assert_eq!(p.sounds.len(), 1);
+    assert_eq!((p.sounds[0].radius, p.sounds[0].volume), (20.0, 25.0));
+    // A silent weapon (radius 0) adds nothing on a miss.
+    p.sounds.clear();
+    p.tick(Input { dir: [0.0, 0.0], run: false }, &mut world);
+    for _ in 0..40 { p.tick(Input { dir: [0.0, 0.0], run: false }, &mut world); }
+    p.sounds.clear();
+    p.attack(&mut vec![], &bat());
+    assert!(p.sounds.is_empty());
 }
