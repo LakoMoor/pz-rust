@@ -133,6 +133,44 @@ impl World {
             && self.column(x, y, z).is_some_and(|c| c.names.iter().any(|n| n.starts_with("floors_") || n.starts_with("roofs_")))
     }
 
+    /// A* over orthogonal steps allowed by `can_step`; returns the squares to walk through
+    /// (excluding `from`, including `to`). Gives up after `max_nodes` expansions.
+    pub fn find_path(&mut self, from: (i32, i32), to: (i32, i32), z: usize, max_nodes: usize) -> Option<Vec<(i32, i32)>> {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        if from == to { return Some(vec![]); }
+        let h = |p: (i32, i32)| ((p.0 - to.0).abs() + (p.1 - to.1).abs()) as u32;
+        let mut open = BinaryHeap::new();
+        let mut g: HashMap<(i32, i32), u32> = HashMap::new();
+        let mut parent: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
+        g.insert(from, 0);
+        open.push(Reverse((h(from), 0u32, from)));
+        let mut expanded = 0;
+        while let Some(Reverse((_, cost, cur))) = open.pop() {
+            if cur == to {
+                let mut path = vec![cur];
+                let mut c = cur;
+                while let Some(&p) = parent.get(&c) { if p == from { break; } path.push(p); c = p; }
+                path.reverse();
+                return Some(path);
+            }
+            if cost > *g.get(&cur).unwrap_or(&u32::MAX) { continue; }
+            expanded += 1;
+            if expanded > max_nodes { return None; }
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = (cur.0 + dx, cur.1 + dy);
+                if !self.has_floor(n.0, n.1, z) || !self.can_step(cur, n, z) { continue; }
+                let ng = cost + 1;
+                if ng < *g.get(&n).unwrap_or(&u32::MAX) {
+                    g.insert(n, ng);
+                    parent.insert(n, cur);
+                    open.push(Reverse((ng + h(n), ng, n)));
+                }
+            }
+        }
+        None
+    }
+
     /// Can a walker step from square `from` into the orthogonally adjacent square `to`?
     pub fn can_step(&mut self, from: (i32, i32), to: (i32, i32), z: usize) -> bool {
         let (dx, dy) = (to.0 - from.0, to.1 - from.1);

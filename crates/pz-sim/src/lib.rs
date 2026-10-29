@@ -172,12 +172,12 @@ impl Weapon {
     pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false };
 }
 
-#[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub on_floor: bool, pub knocked_down: bool, pub reanimate_timer: f32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
+#[derive(Clone)]
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub on_floor: bool, pub knocked_down: bool, path: Vec<(i32, i32)>, stuck: u32, pub reanimate_timer: f32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng };
         zb.idle_timer = zb.pick_wander_interval();
         zb
     }
@@ -265,6 +265,34 @@ impl Zombie {
             }
             return;
         }
+        self.chase(target, d, world);
+    }
+
+    /// Walk toward the target; when walls block the straight line, route around them with A*.
+    fn chase(&mut self, target: &Player, d: [f32; 2], world: &mut World) {
+        if let Some(&(wx, wy)) = self.path.first() {
+            let to = [wx as f32 - self.pos[0], wy as f32 - self.pos[1]];
+            if to[0].hypot(to[1]) < 0.15 { self.path.remove(0); } else { self.step_toward(to, world); }
+            // The target moved on: drop a stale route.
+            let end = *self.path.last().unwrap_or(&(wx, wy));
+            let t = square_of(target.pos);
+            if (end.0 - t.0).abs() + (end.1 - t.1).abs() > 3 { self.path.clear(); }
+            return;
+        }
+        let before = self.pos;
+        self.step_toward(d, world);
+        if self.pos == before {
+            self.stuck += 1;
+            if self.stuck >= 5 {
+                self.stuck = 0;
+                if let Some(p) = world.find_path(square_of(self.pos), square_of(target.pos), self.z, 4000) { self.path = p; }
+            }
+        } else {
+            self.stuck = 0;
+        }
+    }
+
+    fn step_toward(&mut self, d: [f32; 2], world: &mut World) {
         slide(&mut self.pos, self.z, d, ZOMBIE_SPEED, world, false);
     }
 }
