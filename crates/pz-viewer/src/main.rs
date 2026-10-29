@@ -111,11 +111,13 @@ fn emit(inst: &mut Vec<Instance>, batches: &mut Vec<Batch>, page: assets::PageKe
 }
 
 struct Args {
+    connect: Option<String>,
     pz: PathBuf, map: String, at: [f32; 2], zoom: f32, size: (u32, u32), shot: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
     let mut a = Args {
+        connect: None,
         pz: std::env::var("PZ_DIR").map(PathBuf::from).unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into()),
         map: "Muldraugh, KY".into(), at: [12700.0, 1700.0], zoom: 0.5, size: (1600, 900), shot: None,
     };
@@ -124,6 +126,7 @@ fn parse_args() -> Args {
         let mut v = || it.next().unwrap_or_else(|| panic!("{k} needs a value"));
         match k.as_str() {
             "--pz" => a.pz = v().into(),
+            "--connect" => a.connect = Some(v()),
             "--map" => a.map = v(),
             "--shot" => a.shot = Some(v().into()),
             "--zoom" => a.zoom = v().parse().unwrap(),
@@ -221,7 +224,7 @@ struct Gfx { window: Arc<Window>, surface: wgpu::Surface<'static>, config: wgpu:
 
 struct App {
     args: Args, scene: Scene, gfx: Option<Gfx>, center: [f32; 2], zoom: f32,
-    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon,
+    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon, net: Option<pz_net::udp::UdpClient>,
 }
 
 impl ApplicationHandler for App {
@@ -289,10 +292,24 @@ impl ApplicationHandler for App {
                 let input = Input { dir, run: self.keys.contains(&KeyCode::ShiftLeft) };
                 self.acc += dt;
                 while self.acc >= TICK_DT {
+                    if let Some(net) = self.net.as_mut() {
+                        let _ = net.send_input(input.dir, input.run);
+                        self.acc -= TICK_DT;
+                        continue;
+                    }
                     self.scene.player.tick(input, &mut self.scene.world);
                     let scn = &mut self.scene;
                     for zb in &mut scn.zombies { zb.tick(&mut scn.player, &mut scn.world); }
                     self.acc -= TICK_DT;
+                }
+                if let Some(net) = self.net.as_mut() {
+                    if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, .. })) = net.latest_snapshot() {
+                        if let Some(me) = players.iter().find(|p| p.id == you) {
+                            let pl = &mut self.scene.player;
+                            pl.pos = me.pos; pl.z = me.z as usize; pl.height = me.z as f32; pl.health = me.health;
+                        }
+                        self.scene.zombies = zombies.iter().map(|z| { let mut zb = Zombie::new(z.pos[0], z.pos[1], z.z as usize); zb.health = z.health; zb }).collect();
+                    }
                 }
                 self.center = player_cam(&self.scene.player);
                 g.window.set_title(&format!("pz-rust | health {:.0}{}", self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
@@ -315,6 +332,12 @@ impl ApplicationHandler for App {
     }
 }
 
+/// `--connect host:port` switches to client mode: the server owns the simulation, we only render it.
+fn app_net(a: &Args) -> Option<pz_net::udp::UdpClient> {
+    let addr = a.connect.as_ref()?;
+    Some(pz_net::udp::UdpClient::connect(addr).unwrap_or_else(|e| panic!("connect {addr}: {e}")))
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn")).init();
     let args = parse_args();
@@ -330,6 +353,7 @@ fn main() {
         }))
         .unwrap_or(Weapon::FISTS);
     log::info!("weapon: {weapon:?}");
-    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon };
+    let net = app_net(&args);
+    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon, net };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
 }

@@ -20,6 +20,7 @@ set PZ_DIR=E:\Games\steamapps\common\ProjectZomboid
 cargo run --release -p pz-viewer -- --at 12670,1660          # WASD/Shift/wheel
 cargo run --release -p pz-viewer -- --shot out.png --at 12670,1660 --zoom 0.8   # headless frame
 cargo run --release -p pz-server -- --bind 0.0.0.0:16261      # headless UDP server, 30 Hz
+cargo run --release -p pz-viewer -- --connect 127.0.0.1:16261   # client mode (renders the server's world)
 cargo test --release                                         # differential tests vs. your install
 ```
 

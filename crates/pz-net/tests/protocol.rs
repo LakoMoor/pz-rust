@@ -10,6 +10,7 @@ fn messages_round_trip_and_reject_garbage() {
     assert_eq!(ClientMsg::decode(&c.encode()), Ok(c));
     let s = ServerMsg::Snapshot {
         tick: 3,
+        you: 1,
         players: vec![PlayerState { id: 1, pos: [1.5, 2.5], z: 1, health: 90.0 }],
         zombies: vec![ZombieState { pos: [0.0, 4.0], z: 0, health: 3.0 }],
     };

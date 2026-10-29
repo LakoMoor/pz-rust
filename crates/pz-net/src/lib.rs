@@ -18,7 +18,7 @@ pub struct PlayerState { pub id: ClientId, pub pos: [f32; 2], pub z: u8, pub hea
 pub struct ZombieState { pub pos: [f32; 2], pub z: u8, pub health: f32 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ServerMsg { Snapshot { tick: u32, players: Vec<PlayerState>, zombies: Vec<ZombieState> } }
+pub enum ServerMsg { Snapshot { tick: u32, you: ClientId, players: Vec<PlayerState>, zombies: Vec<ZombieState> } }
 
 #[derive(Debug, PartialEq)]
 pub enum DecodeError { Truncated, BadTag(u8) }
@@ -61,9 +61,9 @@ impl ClientMsg {
 
 impl ServerMsg {
     pub fn encode(&self) -> Vec<u8> {
-        let ServerMsg::Snapshot { tick, players, zombies } = self;
+        let ServerMsg::Snapshot { tick, you, players, zombies } = self;
         let mut w = W(vec![]);
-        w.u8(2); w.u32(*tick); w.u32(players.len() as u32);
+        w.u8(2); w.u32(*tick); w.u32(*you); w.u32(players.len() as u32);
         for p in players { w.u32(p.id); w.f32(p.pos[0]); w.f32(p.pos[1]); w.u8(p.z); w.f32(p.health); }
         w.u32(zombies.len() as u32);
         for z in zombies { w.f32(z.pos[0]); w.f32(z.pos[1]); w.u8(z.z); w.f32(z.health); }
@@ -74,6 +74,7 @@ impl ServerMsg {
         match r.u8()? {
             2 => {
                 let tick = r.u32()?;
+                let you = r.u32()?;
                 let np = r.u32()?;
                 let mut players = Vec::new();
                 for _ in 0..np {
@@ -84,7 +85,7 @@ impl ServerMsg {
                 for _ in 0..nz {
                     zombies.push(ZombieState { pos: [r.f32()?, r.f32()?], z: r.u8()?, health: r.f32()? });
                 }
-                Ok(ServerMsg::Snapshot { tick, players, zombies })
+                Ok(ServerMsg::Snapshot { tick, you, players, zombies })
             }
             t => Err(DecodeError::BadTag(t)),
         }
@@ -131,6 +132,7 @@ impl Server {
         self.tick += 1;
         ServerMsg::Snapshot {
             tick: self.tick,
+            you: 0, // filled in per recipient by the transport
             players: self.players.iter().map(|(id, p)| PlayerState { id: *id, pos: p.pos, z: p.z as u8, health: p.health }).collect(),
             zombies: self.zombies.iter().map(|z| ZombieState { pos: z.pos, z: z.z as u8, health: z.health }).collect(),
         }

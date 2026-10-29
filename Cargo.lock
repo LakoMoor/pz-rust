@@ -1548,6 +1548,7 @@ dependencies = [
  "pollster",
  "pz-formats",
  "pz-items",
+ "pz-net",
  "pz-sim",
  "pz-world",
  "wgpu",

@@ -1,6 +1,9 @@
 //! Plain `std::net` UDP transport (no async runtime, works the same on every platform).
 use crate::{ClientId, ClientMsg, Server, ServerMsg};
-use std::{collections::HashMap, io, net::{SocketAddr, ToSocketAddrs, UdpSocket}};
+use std::{collections::HashMap, io, net::{SocketAddr, ToSocketAddrs, UdpSocket}, time::{Duration, Instant}};
+
+/// Clients silent for this long are dropped.
+const TIMEOUT: Duration = Duration::from_secs(10);
 
 const MAX_DATAGRAM: usize = 65_507;
 
@@ -8,7 +11,7 @@ const MAX_DATAGRAM: usize = 65_507;
 pub struct UdpServer {
     pub server: Server,
     socket: UdpSocket,
-    clients: HashMap<SocketAddr, ClientId>,
+    clients: HashMap<SocketAddr, (ClientId, Instant)>,
     next_id: ClientId,
     spawn: [f32; 2],
 }
@@ -30,15 +33,19 @@ impl UdpServer {
             match self.socket.recv_from(&mut buf) {
                 Ok((n, from)) => {
                     let Ok(msg) = ClientMsg::decode(&buf[..n]) else { continue };
-                    let id = *self.clients.entry(from).or_insert_with(|| {
+                    let entry = self.clients.entry(from).or_insert_with(|| {
                         let id = self.next_id;
                         self.next_id += 1;
                         self.server.join(id, self.spawn[0], self.spawn[1]);
-                        id
+                        (id, Instant::now())
                     });
+                    entry.1 = Instant::now();
+                    let id = entry.0;
                     self.server.handle(id, msg);
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                // Windows reports ICMP "port unreachable" from an earlier send as a recv error.
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => continue,
                 Err(e) => return Err(e),
             }
         }
@@ -46,8 +53,19 @@ impl UdpServer {
 
     /// Advance one tick and send the snapshot to every client.
     pub fn step(&mut self) -> io::Result<()> {
-        let bytes = self.server.tick().encode();
-        for addr in self.clients.keys() { self.socket.send_to(&bytes, addr)?; }
+        let stale: Vec<SocketAddr> = self.clients.iter().filter(|(_, (_, t))| t.elapsed() > TIMEOUT).map(|(a, _)| *a).collect();
+        for a in stale {
+            if let Some((id, _)) = self.clients.remove(&a) { self.server.leave(id); }
+        }
+        let mut snap = self.server.tick();
+        for (addr, (id, _)) in &self.clients {
+            if let ServerMsg::Snapshot { you, .. } = &mut snap { *you = *id; }
+            match self.socket.send_to(&snap.encode(), addr) {
+                Ok(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {}
+                Err(e) => return Err(e),
+            }
+        }
         Ok(())
     }
 }

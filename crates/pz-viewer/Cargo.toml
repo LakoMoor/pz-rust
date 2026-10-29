@@ -11,6 +11,7 @@ png = "0.17"
 pollster = "1.0.1"
 pz-formats = { path = "../pz-formats" }
 pz-items = { path = "../pz-items" }
+pz-net = { path = "../pz-net" }
 pz-sim = { path = "../pz-sim" }
 pz-world = { path = "../pz-world" }
 wgpu = "24"
