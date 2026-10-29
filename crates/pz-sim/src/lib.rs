@@ -1,6 +1,8 @@
 //! Fixed-timestep game simulation (deterministic; independent of rendering).
 use pz_world::{flag, World};
 
+pub mod firearm;
+
 pub const TICK_HZ: f32 = 30.0;
 pub const TICK_DT: f32 = 1.0 / TICK_HZ;
 const WALK: f32 = 3.0; // tiles / second
