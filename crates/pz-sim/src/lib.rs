@@ -3,6 +3,7 @@ use pz_world::{flag, World};
 
 pub mod firearm;
 pub mod simplex;
+pub mod noise2d;
 pub mod climate;
 pub mod jrandom;
 
