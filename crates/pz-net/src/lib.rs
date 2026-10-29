@@ -201,3 +201,12 @@ pub fn gun_from_item(d: &pz_items::ItemDef) -> Option<Gun> {
         sound_radius: d.sound_radius, sound_volume: d.sound_volume,
     })
 }
+
+/// Reload `gun` (the firearm described by `def`) from the rounds in `inv`: moves up to a full magazine's worth.
+/// Returns the number of rounds loaded; 0 when the item is no firearm, the magazine is full, or no rounds are carried.
+pub fn reload_from_inventory(def: &pz_items::ItemDef, gun: &mut Gun, inv: &mut pz_items::Inventory, db: &pz_items::ItemDb) -> u32 {
+    let Some(round) = def.ammo_type.as_deref().and_then(|a| db.ammo_item(a)) else { return 0 };
+    let taken = gun.load(def.max_ammo as u32, inv.count(round));
+    if taken > 0 { inv.remove(db, round, taken); }
+    taken
+}

@@ -45,3 +45,20 @@ fn pistol_firearm_stats_come_from_the_scripts() {
     assert_eq!((p.hit_chance, p.min_sight_range, p.max_sight_range, p.max_ammo, p.recoil_delay), (50.0, 2.0, 6.0, 15.0, 12.0));
     assert!(!db.get("Base.BaseballBat").unwrap().is_firearm());
 }
+
+#[test]
+fn every_firearm_has_a_matching_ammo_item() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let scripts = std::path::PathBuf::from(dir).join("media").join("scripts");
+    if !scripts.is_dir() { return; }
+    let db = pz_items::ItemDb::load(&scripts).unwrap();
+    assert_eq!(db.ammo_item("base:bullets_9mm"), Some("Base.Bullets9mm"));
+    let guns: Vec<_> = db.all().filter(|d| d.is_firearm()).collect();
+    assert!(guns.len() > 10);
+    let mut missing = vec![];
+    for g in &guns {
+        let a = g.ammo_type.as_deref().unwrap();
+        if db.ammo_item(a).is_none() { missing.push(format!("{} -> {a}", g.id)); }
+    }
+    assert!(missing.is_empty(), "no ammo item for: {missing:?}");
+}

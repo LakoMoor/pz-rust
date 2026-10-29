@@ -87,3 +87,24 @@ fn shoot_message_round_trips_and_fires_the_players_own_gun() {
     let ServerMsg::Snapshot { zombies, .. } = s.tick();
     assert!(zombies.is_empty() || zombies[0].health < 1.95, "the bullet should have landed: {zombies:?}");
 }
+
+#[test]
+fn reloading_moves_rounds_from_the_inventory_into_the_magazine() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let scripts = std::path::PathBuf::from(dir).join("media").join("scripts");
+    if !scripts.is_dir() { return; }
+    let db = pz_items::ItemDb::load(&scripts).unwrap();
+    let def = db.get("Base.Pistol").unwrap();
+    let mut gun = gun_from_item(def).unwrap();
+    gun.ammo = 3;
+    let mut inv = pz_items::Inventory::new(100.0);
+    inv.add(&db, "Base.Bullets9mm", 20).unwrap();
+    assert_eq!(reload_from_inventory(def, &mut gun, &mut inv, &db), 12);
+    assert_eq!((gun.ammo, inv.count("Base.Bullets9mm")), (15, 8));
+    // Full magazine: nothing moves. Empty pockets: nothing moves.
+    assert_eq!(reload_from_inventory(def, &mut gun, &mut inv, &db), 0);
+    gun.ammo = 0;
+    inv.remove(&db, "Base.Bullets9mm", 8);
+    assert_eq!(reload_from_inventory(def, &mut gun, &mut inv, &db), 0);
+    assert_eq!(gun.ammo, 0);
+}

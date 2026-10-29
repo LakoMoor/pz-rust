@@ -119,6 +119,15 @@ pub struct Gun {
     pub sound_volume: f32,
 }
 
+impl Gun {
+    /// Top the magazine up to `clip_size` from `available` rounds; returns how many rounds were taken.
+    pub fn load(&mut self, clip_size: u32, available: u32) -> u32 {
+        let take = clip_size.saturating_sub(self.ammo).min(available);
+        self.ammo += take;
+        take
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shot { Dry, Cooldown, Miss, Hit { killed: bool } }
 

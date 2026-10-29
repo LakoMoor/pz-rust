@@ -68,7 +68,8 @@ fn def(module: &str, b: &Block) -> ItemDef {
 }
 
 impl ItemDef {
-    pub fn is_firearm(&self) -> bool { self.ammo_type.is_some() }
+    /// Weapons that fire rounds; magazines also carry an `AmmoType` but have no range.
+    pub fn is_firearm(&self) -> bool { self.ammo_type.is_some() && self.max_range > 0.0 }
 }
 
 impl ItemDb {
@@ -97,6 +98,22 @@ impl ItemDb {
         v.sort_unstable();
         v
     }
+    /// The item id of the rounds a firearm with this `AmmoType` (e.g. `base:bullets_9mm`) fires: `Base.Bullets9mm`.
+    /// The original registers this mapping in code (`AmmoType.registerBase`); here the names are matched ignoring
+    /// case and underscores, which holds for every firearm in the shipped scripts (see the real-data test).
+    pub fn ammo_item(&self, ammo_type: &str) -> Option<&str> {
+        let key: String = ammo_type.rsplit(':').next()?.chars().filter(|c| *c != '_').flat_map(char::to_lowercase).collect();
+        // Most rounds are `Bullets<cal>`, but the rifle ones are named the other way round (`308Bullets`).
+        let swapped = key.strip_prefix("bullets").map(|rest| format!("{rest}bullets"));
+        let (module, _) = ammo_type.split_once(':').unwrap_or(("base", ""));
+        let mut hits: Vec<&str> = self.items.keys().map(String::as_str).filter(|id| {
+            let (m, name) = id.split_once('.').unwrap_or(("", id));
+            m.eq_ignore_ascii_case(module) && { let n: String = name.chars().filter(|c| *c != '_').flat_map(char::to_lowercase).collect(); n == key || Some(&n) == swapped.as_ref() }
+        }).collect();
+        hits.sort_unstable();
+        hits.first().copied()
+    }
+    pub fn all(&self) -> impl Iterator<Item = &ItemDef> { self.items.values() }
     pub fn get(&self, id: &str) -> Option<&ItemDef> { self.items.get(id) }
     pub fn len(&self) -> usize { self.items.len() }
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
