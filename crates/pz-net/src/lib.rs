@@ -156,10 +156,12 @@ impl Server {
         let weather = self.clock.weather(0.0, 0.0);
         // Each zombie chases the nearest living player on its floor.
         for zb in &mut self.zombies {
-            let nearest = self.players.values_mut().filter(|p| p.z == zb.z && p.health > 0.0).min_by(|a, b| {
-                let d = |p: &Player| (p.pos[0] - zb.pos[0]).powi(2) + (p.pos[1] - zb.pos[1]).powi(2);
-                d(a).total_cmp(&d(b))
-            });
+            // Prefer the nearest living player; with none on this floor, the nearest body to feed on.
+            let dist2 = |p: &Player| (p.pos[0] - zb.pos[0]).powi(2) + (p.pos[1] - zb.pos[1]).powi(2);
+            let key = self.players.iter().filter(|(_, p)| p.z == zb.z)
+                .min_by(|(_, a), (_, b)| ((a.health <= 0.0), dist2(a)).partial_cmp(&((b.health <= 0.0), dist2(b))).unwrap())
+                .map(|(id, _)| *id);
+            let nearest = key.and_then(|id| self.players.get_mut(&id));
             if let Some(p) = nearest { zb.tick_in(p, &mut self.world, &weather); }
         }
         let sounds: Vec<_> = self.players.values_mut().flat_map(|p| std::mem::take(&mut p.sounds)).collect();

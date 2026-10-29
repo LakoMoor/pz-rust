@@ -158,6 +158,9 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
 
 /// A hit-point scale comparable to weapon damages in the item scripts (e.g. 0.4..0.8 per swing for blades).
 const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keeps the sim deterministic
+const EAT_RANGE: f32 = 1.0;
+/// ZombieEatBodyState.enter: stateEventDelayTimer = Rand.Next(1800, 3600); read here as ticks (the timer's unit is not verified).
+const EAT_MIN_TICKS: u32 = 1800;
 const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
@@ -216,11 +219,14 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     /// Crawler: `IsoZombie.doCrawlerSpeed` speedMod (0.3 + 0..0.15) instead of a shambler's (about 0.625).
     crawl_mod: Option<f32>,
     /// Climbing a window or fence: ticks left and the square being climbed to.
-    climb: Option<(u32, (i32, i32))> }
+    climb: Option<(u32, (i32, i32))>,
+    /// ZombieEatBodyState: ticks of feeding left, and whether this zombie has had its fill of the current body.
+    eating: Option<u32>,
+    fed: bool }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, climb: None };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, climb: None, eating: None, fed: false };
         zb.idle_timer = zb.pick_wander_interval();
         zb
     }
@@ -314,7 +320,22 @@ impl Zombie {
         if target.z != self.z { self.idle(world); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if dist > weather.vision_radius_for(self.sight, 1.0, false) { self.idle(world); return; }
+        if dist > weather.vision_radius_for(self.sight, 1.0, self.eating.is_some()) { self.idle(world); return; }
+        if target.health <= 0.0 {
+            // Nothing left to fight: walk up to the body and feed on it.
+            if self.fed { self.eating = None; self.idle(world); return; }
+            if dist < EAT_RANGE {
+                self.facing = [d[0] / dist.max(1e-6), d[1] / dist.max(1e-6)];
+                let left = match self.eating { Some(t) => t, None => EAT_MIN_TICKS + self.rand(EAT_MIN_TICKS) };
+                if left <= 1 { self.eating = None; self.fed = true; } else { self.eating = Some(left - 1); }
+            } else {
+                self.eating = None;
+                self.chase(target, d, world);
+            }
+            return;
+        }
+        self.fed = false;
+        self.eating = None;
         if dist < ATTACK_RANGE {
             if self.cooldown == 0 {
                 let side = side_of(target.facing, [-d[0], -d[1]]);
@@ -355,6 +376,8 @@ impl Zombie {
             self.stuck = 0;
         }
     }
+
+    pub fn is_eating(&self) -> bool { self.eating.is_some() }
 
     pub fn is_climbing(&self) -> bool { self.climb.is_some() }
 
