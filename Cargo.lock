@@ -1525,6 +1525,7 @@ version = "0.1.0"
 name = "pz-server"
 version = "0.1.0"
 dependencies = [
+ "pz-items",
  "pz-net",
  "pz-sim",
  "pz-world",

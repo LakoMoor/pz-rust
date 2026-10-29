@@ -26,7 +26,12 @@ fn main() {
     world.load_tile_flags(&media);
     let spawn = [12670.0, 1660.0];
     let zombies = (0..8).map(|i| Zombie::new(spawn[0] + 6.0 + i as f32, spawn[1] + (i % 3) as f32, 0)).collect();
-    let mut srv = UdpServer::bind(&bind, Server::new(world, zombies), spawn).expect("bind");
+    let mut game = Server::new(world, zombies);
+    // Same weapon as the single-player client: stats come from the game's item scripts.
+    if let Some(b) = pz_items::ItemDb::load(&media.join("scripts")).ok().and_then(|db| db.get("Base.BaseballBat").cloned()) {
+        game.set_weapon(pz_sim::Weapon { damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range, cooldown_ticks: (b.swing_time * 10.0) as u32 });
+    }
+    let mut srv = UdpServer::bind(&bind, game, spawn).expect("bind");
     println!("listening {}", srv.local_addr().unwrap());
 
     let step = Duration::from_secs_f32(TICK_DT);
