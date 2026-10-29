@@ -311,7 +311,12 @@ impl ApplicationHandler for App {
                         self.scene.world.set_open_doors(doors.into_iter().map(|(x, y, z)| (x, y, z as usize)));
                         if let Some(me) = players.iter().find(|p| p.id == you) {
                             let pl = &mut self.scene.player;
-                            pl.pos = me.pos; pl.z = me.z as usize; pl.height = me.z as f32; pl.health = me.health;
+                            // Snap on floor change or big jumps; otherwise ease toward the server position.
+                            let far = (pl.pos[0] - me.pos[0]).abs() + (pl.pos[1] - me.pos[1]).abs() > 3.0;
+                            if far || pl.z != me.z as usize { pl.pos = me.pos; } else {
+                                pl.pos = [pl.pos[0] + (me.pos[0] - pl.pos[0]) * 0.35, pl.pos[1] + (me.pos[1] - pl.pos[1]) * 0.35];
+                            }
+                            pl.z = me.z as usize; pl.height = me.z as f32; pl.health = me.health;
                         }
                         self.scene.zombies = zombies.iter().map(|z| { let mut zb = Zombie::new(z.pos[0], z.pos[1], z.z as usize); zb.health = z.health; zb }).collect();
                     }
