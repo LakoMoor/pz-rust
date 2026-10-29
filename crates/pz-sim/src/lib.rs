@@ -547,13 +547,38 @@ pub struct GameClock {
     pub dusk: f32,
     /// Real seconds per in-game day (3600 = the default "1 hour" day length).
     pub day_seconds: f32,
+    /// Today's morning fog, if any.
+    pub fog: Option<FogDay>,
 }
 
 impl Default for GameClock {
-    fn default() -> Self { GameClock { hour: 9.0, dawn: 7.0, dusk: 21.0, day_seconds: 3600.0 } }
+    fn default() -> Self { GameClock { hour: 9.0, dawn: 7.0, dusk: 21.0, day_seconds: 3600.0, fog: None } }
+}
+
+/// One day's morning fog (`ClimateValues.dayDoFog / dayFogStrength / dayFogDuration`). The original rolls these per
+/// day from a seeded generator and the temperature; here the caller supplies them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FogDay {
+    /// Raw strength 0..1 (`dayFogStrength` before the quality mapping).
+    pub strength: f32,
+    /// Hours of fog after dawn (the fog starts building 2 h before it).
+    pub duration: f32,
 }
 
 impl GameClock {
+    /// `ClimateManager.updateValues`: fog builds from `dawn - 2` and burns off by `dawn + duration`, following a
+    /// cosine bump. The strength is mapped as for fog quality 2 (`0.5 + 0.5 * s`).
+    pub fn fog_intensity(&self) -> f32 {
+        let Some(f) = self.fog else { return 0.0 };
+        let strength = 0.5 + 0.5 * f.strength;
+        let (lo, hi) = (self.dawn - 2.0, self.dawn + f.duration);
+        if strength <= 0.0 || self.hour <= lo || self.hour >= hi { return 0.0; }
+        let lerp = (time_lerp_hours(self.hour, lo, hi) * (f.duration / 3.0)).clamp(0.0, 1.0);
+        clerp(lerp, 0.0, strength)
+    }
+    /// Vision conditions at this time of day, using today's fog and the given rain.
+    pub fn weather_now(&self, rain: f32) -> Weather { self.weather(rain, self.fog_intensity()) }
+
     pub fn tick(&mut self) {
         self.hour += 24.0 / (self.day_seconds * TICK_HZ);
         if self.hour >= 24.0 { self.hour -= 24.0; }

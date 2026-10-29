@@ -68,3 +68,18 @@ fn crawlers_are_roughly_half_as_fast() {
     let ratio = crawler.pos[0] / walker.pos[0];
     assert!((0.48..=0.75).contains(&ratio), "ratio {ratio}");
 }
+
+#[test]
+fn morning_fog_builds_peaks_and_burns_off() {
+    let day = |hour| GameClock { hour, fog: Some(FogDay { strength: 1.0, duration: 4.0 }), ..GameClock::default() };
+    // Dawn is 7:00: fog starts at 5:00 and is gone at 11:00.
+    assert_eq!(day(4.9).fog_intensity(), 0.0);
+    assert_eq!(day(11.1).fog_intensity(), 0.0);
+    let (early, peak, late) = (day(5.5).fog_intensity(), day(8.0).fog_intensity(), day(10.5).fog_intensity());
+    assert!(0.0 < early && early < peak && late < peak, "{early} {peak} {late}");
+    // Full strength maps to 1.0 and is reached mid-window.
+    assert!((peak - 1.0).abs() < 1e-3, "{peak}");
+    // No fog today: always clear. And fog really shortens the zombies' sight.
+    assert_eq!(GameClock { hour: 8.0, ..GameClock::default() }.fog_intensity(), 0.0);
+    assert_eq!(day(8.0).weather_now(0.0).vision_radius(), 13.0);
+}

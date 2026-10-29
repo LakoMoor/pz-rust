@@ -320,7 +320,7 @@ impl ApplicationHandler for App {
                     self.scene.player.tick(input, &mut self.scene.world);
                     let scn = &mut self.scene;
                     scn.clock.tick();
-                    let weather = scn.clock.weather(0.0, 0.0);
+                    let weather = scn.clock.weather_now(0.0);
                     for zb in &mut scn.zombies { zb.tick_in(&mut scn.player, &mut scn.world, &weather); }
                     self.acc -= TICK_DT;
                 }
