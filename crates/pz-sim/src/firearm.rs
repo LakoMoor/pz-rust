@@ -98,3 +98,57 @@ impl Firearm {
         (chance as i32 as f32).clamp(MINIMUM_TO_HIT_CHANCE, MAXIMUM_TO_HIT_CHANCE) as i32
     }
 }
+
+use crate::{Player, WorldSound, Zombie};
+
+/// A loaded firearm: the hit-chance parameters plus what a shot does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Gun {
+    pub firearm: Firearm,
+    /// `MinDamage` / `MaxDamage`: a hit deals a uniform roll in this range (`Rand.Next(min, max)`, rangeDel 1.0).
+    pub min_damage: f32,
+    pub max_damage: f32,
+    /// `MaxRange`
+    pub max_range: f32,
+    /// `RecoilDelay`, used here as the ticks between shots.
+    pub recoil_delay: u32,
+    /// Rounds in the magazine (`ClipSize` when full).
+    pub ammo: u32,
+    /// `SoundRadius` / `SoundVolume`: the noise of a shot.
+    pub sound_radius: f32,
+    pub sound_volume: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shot { Dry, Cooldown, Miss, Hit { killed: bool } }
+
+impl Player {
+    /// Fire `gun` along the facing direction at the closest zombie within range and a narrow cone.
+    /// Always spends a round and makes a noise; the hit is rolled against [`Firearm::hit_chance`].
+    ///
+    /// Simplified against the original: one bullet, no piercing, no cover or line-of-sight test, and a hit only
+    /// subtracts health (no stagger or knock-down from bullets yet).
+    pub fn shoot(&mut self, zombies: &mut Vec<Zombie>, gun: &mut Gun) -> Shot {
+        if self.swing_cd > 0 { return Shot::Cooldown; }
+        if gun.ammo == 0 { return Shot::Dry; }
+        gun.ammo -= 1;
+        self.swing_cd = gun.recoil_delay;
+        self.sounds.push(WorldSound { pos: self.pos, z: self.z, radius: gun.sound_radius, volume: gun.sound_volume, zombie_ignore_dist: 0.0, source_is_zombie: false });
+        let target = zombies.iter().enumerate().filter(|(_, zb)| zb.z == self.z).filter_map(|(i, zb)| {
+            let d = [zb.pos[0] - self.pos[0], zb.pos[1] - self.pos[1]];
+            let dist = d[0].hypot(d[1]);
+            let in_cone = dist < 1e-4 || (d[0] * self.facing[0] + d[1] * self.facing[1]) / dist > 0.95;
+            (in_cone && dist <= gun.max_range).then_some((i, dist))
+        }).min_by(|a, b| a.1.total_cmp(&b.1));
+        let Some((i, dist)) = target else { return Shot::Miss };
+        let chance = gun.firearm.hit_chance(dist, zombies[i].on_floor, 0.0, 0.0);
+        self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+        if (self.rng % 100) as i32 >= chance { return Shot::Miss; }
+        self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+        let roll = (self.rng % 1000) as f32 / 1000.0;
+        zombies[i].health -= gun.min_damage + (gun.max_damage - gun.min_damage) * roll;
+        let killed = zombies[i].health <= 0.0;
+        if killed { zombies.remove(i); }
+        Shot::Hit { killed }
+    }
+}
