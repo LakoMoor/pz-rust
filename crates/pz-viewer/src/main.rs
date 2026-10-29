@@ -15,7 +15,7 @@ const MAX_Z: usize = 7;
 /// Item scripts, the wielded gun's definition and the player's pockets (spare rounds for reloading).
 struct Kit { db: pz_items::ItemDb, def: pz_items::ItemDef, inv: pz_items::Inventory }
 
-struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie>, clock: GameClock }
+struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie>, clock: GameClock, climate: pz_sim::climate::Climate }
 
 /// Continuous tile coordinates -> screen-space (pixel) position.
 fn pos_to_screen(p: [f32; 2]) -> [f32; 2] { [(p[0] - p[1]) * HALF_W, (p[0] + p[1]) * HALF_H] }
@@ -167,7 +167,9 @@ fn make_scene(a: &Args) -> Scene {
         .map(|&(dx, dy)| (sx + dx, sy + dy))
         .filter(|&(x, y)| world.has_floor(x, y, 0) && world.flags(x, y, 0) & pz_world::flag::SOLID == 0)
         .map(|(x, y)| Zombie::new(x as f32, y as f32, 0)).collect();
-    Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies, clock: GameClock::default() }
+    let mut clock = GameClock::default();
+    let climate = pz_net::new_climate(&mut clock);
+    Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies, clock, climate }
 }
 
 /// Render one frame to a PNG without opening a window (also the cross-platform regression hook).
@@ -320,6 +322,7 @@ impl ApplicationHandler for App {
                     self.scene.player.tick(input, &mut self.scene.world);
                     let scn = &mut self.scene;
                     scn.clock.tick();
+                    scn.climate.advance(&mut scn.clock);
                     let weather = scn.clock.weather_now(0.0);
                     for zb in &mut scn.zombies { zb.tick_in(&mut scn.player, &mut scn.world, &weather); }
                     self.acc -= TICK_DT;

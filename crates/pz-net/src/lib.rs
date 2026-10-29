@@ -137,11 +137,15 @@ pub struct Server {
     packs: BTreeMap<ClientId, pz_items::Inventory>,
     /// Game time; sets how far zombies see.
     pub clock: GameClock,
+    /// Calendar and climate driving `clock` (dawn, dusk, daily fog); the game starts on 1993-07-09, like the original.
+    pub climate: pz_sim::climate::Climate,
 }
 
 impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default(), gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
+        let mut clock = GameClock::default();
+        let climate = new_climate(&mut clock);
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
     pub fn set_weapon(&mut self, w: Weapon) { self.weapon = w; }
@@ -191,6 +195,7 @@ impl Server {
             p.tick(self.inputs.get(id).copied().unwrap_or_default(), &mut self.world);
         }
         self.clock.tick();
+        self.climate.advance(&mut self.clock);
         let weather = self.clock.weather_now(0.0);
         // Each zombie chases the nearest living player on its floor.
         for zb in &mut self.zombies {
@@ -232,4 +237,10 @@ pub fn reload_from_inventory(def: &pz_items::ItemDef, gun: &mut Gun, inv: &mut p
     let taken = gun.load(def.max_ammo as u32, inv.count(round));
     if taken > 0 { inv.remove(db, round, taken); }
     taken
+}
+
+/// Default climate: Muldraugh-like seasons, fixed noise offsets, the original's start date (9 July 1993).
+pub fn new_climate(clock: &mut GameClock) -> pz_sim::climate::Climate {
+    use pz_sim::climate::{Climate, Offsets, Seasons};
+    Climate::new(Seasons::default(), Offsets { a: 4000.0, b: 12000.0, c: -4000.0, d: -12000.0 }, 1993, 6, 9, clock)
 }

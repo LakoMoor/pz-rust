@@ -99,3 +99,33 @@ fn air_masses_and_wind_stay_in_range_and_drift_slowly() {
     assert!(step(1) <= step(5) + 1e-3 || step(1) < 0.02);
     assert_eq!(AirMass::at(o, 10.0, 0.0, 0.0, 3).temperature_offset(), AirMass::at(o, 10.0, 0.0, 0.0, 3).temperature * 8.0);
 }
+
+#[test]
+fn the_calendar_rolls_days_months_and_years_and_refreshes_dawn_and_fog() {
+    use pz_sim::climate::{Climate, Offsets, Seasons};
+    use pz_sim::{GameClock, TICK_HZ};
+    let mut clock = GameClock { hour: 23.0, day_seconds: 240.0, ..GameClock::default() };
+    let o = Offsets { a: 10.0, b: 9000.0, c: -10.0, d: -9000.0 };
+    let mut cl = Climate::new(Seasons::default(), o, 1993, 11, 31, &mut clock);
+    let dec_dawn = clock.dawn;
+    assert!((7.7..8.0).contains(&dec_dawn), "{dec_dawn}");
+    // Two game hours at 240 s/day pass in 20 s: midnight falls inside.
+    for _ in 0..(20.0 * TICK_HZ) as u32 { clock.tick(); cl.advance(&mut clock); }
+    assert_eq!((cl.year, cl.month, cl.day), (1994, 0, 1));
+    assert!((cl.world_age_hours - 2.0).abs() < 0.05, "{}", cl.world_age_hours);
+    // Over a few weeks every day gets a fresh dawn and some days fog up, deterministically.
+    let (mut foggy, mut dawns) = (0, std::collections::BTreeSet::new());
+    for _ in 0..(40.0 * 240.0 * TICK_HZ) as u32 / 30 { clock.tick(); cl.advance(&mut clock); }
+    for _ in 0..100 {
+        for _ in 0..(240.0 * TICK_HZ) as u32 { clock.tick(); cl.advance(&mut clock); }
+        foggy += clock.fog.is_some() as u32;
+        dawns.insert((clock.dawn * 100.0) as i32);
+    }
+    assert!(dawns.len() > 20, "dawn should move day to day");
+    assert!((3..45).contains(&foggy), "foggy days {foggy}/100");
+    // Month lengths: February 1996 has 29 days.
+    let mut clock = GameClock { hour: 23.9, day_seconds: 60.0, ..GameClock::default() };
+    let mut cl = Climate::new(Seasons::default(), o, 1996, 1, 28, &mut clock);
+    for _ in 0..(60.0 * TICK_HZ) as u32 / 4 { clock.tick(); cl.advance(&mut clock); }
+    assert_eq!((cl.month, cl.day), (1, 29));
+}

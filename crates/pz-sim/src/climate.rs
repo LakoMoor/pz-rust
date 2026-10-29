@@ -176,3 +176,60 @@ impl AirMass {
     /// The air-mass term added to the seasonal mean temperature (`airMassTemperature * 8`).
     pub fn temperature_offset(&self) -> f32 { self.temperature * 8.0 }
 }
+
+use crate::GameClock;
+
+fn days_in_month(year: i32, m0: i32) -> i32 {
+    match m0 { 1 => if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 { 29 } else { 28 }, 3 | 5 | 8 | 10 => 30, _ => 31 }
+}
+
+/// Calendar plus climate state driving a [`GameClock`]: each new day sets dawn and dusk from the daylight curve
+/// and rolls that day's fog from the date, the seasonal temperature and the air mass.
+pub struct Climate {
+    pub seasons: Seasons,
+    pub offsets: Offsets,
+    pub sandbox_rain: i32,
+    pub year: i32,
+    /// 0-based month.
+    pub month: i32,
+    pub day: i32,
+    /// Hours since the world began (continuous, includes the current day's progress).
+    pub world_age_hours: f64,
+    last_hour: f32,
+}
+
+impl Climate {
+    pub fn new(seasons: Seasons, offsets: Offsets, year: i32, month: i32, day: i32, clock: &mut GameClock) -> Self {
+        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, last_hour: clock.hour };
+        c.start_day(clock);
+        c
+    }
+
+    /// Dawn, dusk and today's fog for the current date.
+    fn start_day(&mut self, clock: &mut GameClock) {
+        let d = Daylight::default();
+        clock.set_date(self.year, self.month, self.day);
+        let (dawn, dusk) = d.dawn_dusk(self.year, self.month, self.day);
+        let (mean, _) = self.seasons.day_temperature(self.year, self.month, self.day);
+        let air = AirMass::at(self.offsets, self.world_age_hours.floor() + 12.0, 12.0, 0.5, self.sandbox_rain);
+        clock.fog = roll_fog(self.year, self.month, self.day, self.offsets.c as i32, self.offsets.d as i32, dawn, mean + air.temperature_offset());
+        let _ = dusk;
+    }
+
+    /// Call once per tick after `clock.tick()`: advances world age and rolls the calendar over at midnight.
+    pub fn advance(&mut self, clock: &mut GameClock) {
+        self.world_age_hours += 24.0 / (clock.day_seconds as f64 * crate::TICK_HZ as f64);
+        if clock.hour < self.last_hour {
+            self.day += 1;
+            if self.day > days_in_month(self.year, self.month) { self.day = 1; self.month += 1; }
+            if self.month > 11 { self.month = 0; self.year += 1; }
+            self.start_day(clock);
+        }
+        self.last_hour = clock.hour;
+    }
+
+    /// Current air mass (wind and temperature offset) at the clock's time.
+    pub fn air(&self, clock: &GameClock) -> AirMass {
+        AirMass::at(self.offsets, self.world_age_hours, clock.hour, 0.5, self.sandbox_rain)
+    }
+}
