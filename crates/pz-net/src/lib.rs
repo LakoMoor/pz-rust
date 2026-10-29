@@ -1,6 +1,6 @@
 //! Transport-agnostic multiplayer core: a compact binary protocol plus an authoritative server
 //! that advances the same fixed-tick simulation as the single-player client.
-use pz_sim::{Input, Player, Weapon, Zombie};
+use pz_sim::{GameClock, Input, Player, Weapon, Zombie};
 use pz_world::World;
 use std::collections::BTreeMap;
 
@@ -116,11 +116,13 @@ pub struct Server {
     inputs: BTreeMap<ClientId, Input>,
     zombies: Vec<Zombie>,
     weapon: Weapon,
+    /// Game time; sets how far zombies see.
+    pub clock: GameClock,
 }
 
 impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock: GameClock::default() }
     }
 
     pub fn set_weapon(&mut self, w: Weapon) { self.weapon = w; }
@@ -150,13 +152,15 @@ impl Server {
         for (id, p) in self.players.iter_mut() {
             p.tick(self.inputs.get(id).copied().unwrap_or_default(), &mut self.world);
         }
+        self.clock.tick();
+        let weather = self.clock.weather(0.0, 0.0);
         // Each zombie chases the nearest living player on its floor.
         for zb in &mut self.zombies {
             let nearest = self.players.values_mut().filter(|p| p.z == zb.z && p.health > 0.0).min_by(|a, b| {
                 let d = |p: &Player| (p.pos[0] - zb.pos[0]).powi(2) + (p.pos[1] - zb.pos[1]).powi(2);
                 d(a).total_cmp(&d(b))
             });
-            if let Some(p) = nearest { zb.tick(p, &mut self.world); }
+            if let Some(p) = nearest { zb.tick_in(p, &mut self.world, &weather); }
         }
         let sounds: Vec<_> = self.players.values_mut().flat_map(|p| std::mem::take(&mut p.sounds)).collect();
         if !sounds.is_empty() { for zb in &mut self.zombies { zb.hear(&sounds); } }

@@ -419,3 +419,59 @@ pub fn melee_crit_chance(crit_chance: f32, two_handed_not_held_in_both: bool, ch
     c += skill as f32 * 3.0;
     c.clamp(10.0, 90.0) as i32
 }
+
+/// Cosine interpolation, `ClimateManager.clerp`.
+fn clerp(t: f32, a: f32, b: f32) -> f32 {
+    let t2 = (1.0 - (t * std::f32::consts::PI).cos()) / 2.0;
+    a * (1.0 - t2) + b * t2
+}
+
+/// `ClimateManager.getTimeLerp(.., doClerp = true)` over hours: 0 outside [min, max], rising to 1 at the middle and back.
+/// A window with min > max wraps past midnight.
+fn time_lerp_hours(cur: f32, min: f32, max: f32) -> f32 {
+    let n = |h: f32| (h / 24.0).clamp(0.0, 1.0);
+    let (cur, min, max) = (n(cur), n(min), n(max));
+    let (c, len) = if min <= max {
+        if cur < min || cur > max { return 0.0; }
+        (cur - min, max - min)
+    } else {
+        if cur < min && cur > max { return 0.0; }
+        let off = 1.0 - min;
+        (if cur >= min { cur - min } else { cur + off }, max + off)
+    };
+    let mid = len * 0.5;
+    if c < mid { clerp(c / mid, 0.0, 1.0) } else { clerp((c - mid) / mid, 1.0, 0.0) }
+}
+
+/// The in-game clock and the day/night cycle derived from it.
+///
+/// Dawn and dusk are fixed parameters here; the original derives them from latitude and day of year
+/// (`ErosionSeason`), which is not ported. The night curve itself is `ClimateValues.lerpNight`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GameClock {
+    /// Hour of day, 0..24.
+    pub hour: f32,
+    pub dawn: f32,
+    pub dusk: f32,
+    /// Real seconds per in-game day (3600 = the default "1 hour" day length).
+    pub day_seconds: f32,
+}
+
+impl Default for GameClock {
+    fn default() -> Self { GameClock { hour: 9.0, dawn: 7.0, dusk: 21.0, day_seconds: 3600.0 } }
+}
+
+impl GameClock {
+    pub fn tick(&mut self) {
+        self.hour += 24.0 / (self.day_seconds * TICK_HZ);
+        if self.hour >= 24.0 { self.hour -= 24.0; }
+    }
+    /// 0 in daylight, 1 deep in the night (`ClimateValues.nightStrength`).
+    pub fn night_strength(&self) -> f32 {
+        (time_lerp_hours(self.hour, self.dusk, self.dawn) * 2.0).clamp(0.0, 1.0)
+    }
+    /// Daylight strength, ignoring the small wind/time-of-day reductions of the original.
+    pub fn daylight(&self) -> f32 { 1.0 - self.night_strength() }
+    /// Vision conditions at this time of day with the given rain and fog.
+    pub fn weather(&self, rain: f32, fog: f32) -> Weather { Weather { rain, fog, light: self.daylight() } }
+}

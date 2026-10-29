@@ -12,3 +12,24 @@ fn vision_radius_follows_the_decompiled_formula() {
     assert_eq!(Weather { rain: 1.0, fog: 1.0, light: 1.0 }.vision_radius(), 10.5);
     assert_eq!(Weather { rain: 5.0, fog: 5.0, light: 1.0 }.vision_radius(), 10.0);
 }
+
+#[test]
+fn clock_cycles_between_day_and_night() {
+    let at = |hour| GameClock { hour, ..GameClock::default() };
+    assert_eq!(at(12.0).night_strength(), 0.0);
+    assert_eq!(at(12.0).weather(0.0, 0.0).vision_radius(), 20.0);
+    // Deep night is fully dark: darkness penalty 5.
+    let n = at(2.0);
+    assert!(n.night_strength() > 0.99, "{}", n.night_strength());
+    assert!((n.weather(0.0, 0.0).vision_radius() - 15.0).abs() < 0.05);
+    // Dusk is in between and monotonic.
+    let (a, b, c) = (at(21.5).night_strength(), at(23.0).night_strength(), at(1.0).night_strength());
+    assert!(0.0 < a && a < b && b <= c, "{a} {b} {c}");
+}
+
+#[test]
+fn clock_advances_one_day_per_day_length() {
+    let mut c = GameClock { hour: 0.0, day_seconds: 60.0, ..GameClock::default() };
+    for _ in 0..(60.0 * TICK_HZ) as u32 / 2 { c.tick(); }
+    assert!((c.hour - 12.0).abs() < 0.01, "{}", c.hour);
+}

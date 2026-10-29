@@ -3,7 +3,7 @@ mod render;
 
 use assets::Assets;
 use render::{Batch, Instance, Renderer, ATLAS, WHITE, WHITE_UV};
-use pz_sim::{square_of, Input, Player, Weapon, Zombie, TICK_DT};
+use pz_sim::{square_of, GameClock, Input, Player, Weapon, Zombie, TICK_DT};
 use pz_world::World;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
@@ -12,7 +12,7 @@ const HALF_H: f32 = 32.0;
 const LEVEL_PX: f32 = 192.0; // height of one floor on screen (3 tiles)
 const MAX_Z: usize = 7;
 
-struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie> }
+struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie>, clock: GameClock }
 
 /// Continuous tile coordinates -> screen-space (pixel) position.
 fn pos_to_screen(p: [f32; 2]) -> [f32; 2] { [(p[0] - p[1]) * HALF_W, (p[0] + p[1]) * HALF_H] }
@@ -164,7 +164,7 @@ fn make_scene(a: &Args) -> Scene {
         .map(|&(dx, dy)| (sx + dx, sy + dy))
         .filter(|&(x, y)| world.has_floor(x, y, 0) && world.flags(x, y, 0) & pz_world::flag::SOLID == 0)
         .map(|(x, y)| Zombie::new(x as f32, y as f32, 0)).collect();
-    Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies }
+    Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies, clock: GameClock::default() }
 }
 
 /// Render one frame to a PNG without opening a window (also the cross-platform regression hook).
@@ -303,7 +303,9 @@ impl ApplicationHandler for App {
                     }
                     self.scene.player.tick(input, &mut self.scene.world);
                     let scn = &mut self.scene;
-                    for zb in &mut scn.zombies { zb.tick(&mut scn.player, &mut scn.world); }
+                    scn.clock.tick();
+                    let weather = scn.clock.weather(0.0, 0.0);
+                    for zb in &mut scn.zombies { zb.tick_in(&mut scn.player, &mut scn.world, &weather); }
                     self.acc -= TICK_DT;
                 }
                 if let Some(net) = self.net.as_mut() {
@@ -322,7 +324,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.center = player_cam(&self.scene.player);
-                g.window.set_title(&format!("pz-rust | health {:.0}{}", self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
+                g.window.set_title(&format!("pz-rust | {:02}:{:02} | health {:.0}{}", self.scene.clock.hour as u32, (self.scene.clock.hour.fract() * 60.0) as u32, self.scene.player.health, if self.scene.player.health <= 0.0 { " | DEAD" } else { "" }));
                 let size = (g.config.width, g.config.height);
                 let (mut inst, batches) = self.scene.build(self.center, size, self.zoom);
                 g.r.prepare(&self.scene.assets, &mut inst, &batches);
