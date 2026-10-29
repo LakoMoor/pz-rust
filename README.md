@@ -20,7 +20,7 @@ cargo run --release -p pz-viewer -- --shot out.png --at 12670,1660 --zoom 0.8   
 cargo test --release                                         # differential tests vs. your install
 ```
 
-Status: map rendering (all floors, roofs), collision, stairs, doors (E to open/close), player movement, simple zombies that chase. Not yet: characters/animation,
+Status: map rendering (all floors, roofs), collision, stairs, doors (E to open/close), player movement, zombies that chase and bite, melee combat (Space). Not yet: characters/animation,
 Lua, items, zombie animation/combat, audio, networking.
 
 ![Knox Bank](docs/img/bank.jpg)

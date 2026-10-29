@@ -3,7 +3,7 @@ mod render;
 
 use assets::Assets;
 use render::{Batch, Instance, Renderer, ATLAS, WHITE, WHITE_UV};
-use pz_sim::{square_of, Input, Player, Zombie, TICK_DT};
+use pz_sim::{square_of, Input, Player, Weapon, Zombie, TICK_DT};
 use pz_world::World;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
@@ -221,7 +221,7 @@ struct Gfx { window: Arc<Window>, surface: wgpu::Surface<'static>, config: wgpu:
 
 struct App {
     args: Args, scene: Scene, gfx: Option<Gfx>, center: [f32; 2], zoom: f32,
-    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32,
+    keys: std::collections::HashSet<KeyCode>, last: Instant, acc: f32, weapon: Weapon,
 }
 
 impl ApplicationHandler for App {
@@ -256,6 +256,11 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(k) = event.physical_key {
                     match event.state { ElementState::Pressed => { self.keys.insert(k); } ElementState::Released => { self.keys.remove(&k); } }
                     if k == KeyCode::Escape { el.exit(); }
+                    if k == KeyCode::Space && event.state == ElementState::Pressed && !event.repeat {
+                        let w = self.weapon;
+                        let scn = &mut self.scene;
+                        scn.player.attack(&mut scn.zombies, &w);
+                    }
                     if k == KeyCode::KeyE && event.state == ElementState::Pressed && !event.repeat {
                         self.scene.player.interact(&mut self.scene.world);
                     }
@@ -317,6 +322,6 @@ fn main() {
     let scene = make_scene(&args);
     let center = player_cam(&scene.player);
     let zoom = args.zoom;
-    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0 };
+    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon: Weapon::FISTS };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
 }

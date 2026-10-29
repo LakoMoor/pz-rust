@@ -22,18 +22,40 @@ pub struct Player {
     pub height: f32,
     /// 0..=100; zombies bite it down.
     pub health: f32,
+    /// Unit vector of the last movement direction (swings go this way).
+    pub facing: [f32; 2],
+    swing_cd: u32,
 }
 
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0 } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, facing: [1.0, 0.0], swing_cd: 0 } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     pub fn tick(&mut self, input: Input, world: &mut World) {
+        self.swing_cd = self.swing_cd.saturating_sub(1);
+        let len = (input.dir[0] * input.dir[0] + input.dir[1] * input.dir[1]).sqrt();
+        if len > 1e-4 { self.facing = [input.dir[0] / len, input.dir[1] / len]; }
         let before = square_of(self.pos);
         self.move_xy(input, world);
         self.update_level(before, world);
+    }
+
+    /// Swing `weapon` in the facing direction; hits every zombie in range and in the front cone.
+    /// Returns the number of zombies killed (dead zombies are removed).
+    pub fn attack(&mut self, zombies: &mut Vec<Zombie>, weapon: &Weapon) -> usize {
+        if self.swing_cd > 0 { return 0; }
+        self.swing_cd = weapon.cooldown_ticks;
+        let before = zombies.len();
+        for zb in zombies.iter_mut().filter(|zb| zb.z == self.z) {
+            let d = [zb.pos[0] - self.pos[0], zb.pos[1] - self.pos[1]];
+            let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
+            let front = dist < 1e-4 || (d[0] * self.facing[0] + d[1] * self.facing[1]) / dist > 0.5;
+            if dist <= weapon.range && front { zb.health -= weapon.damage; }
+        }
+        zombies.retain(|zb| zb.health > 0.0);
+        before - zombies.len()
     }
 
     /// Open/close the nearest door on the player's square or an orthogonal neighbour.
@@ -99,6 +121,8 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
     }
 }
 
+/// A hit-point scale comparable to weapon damages in the item scripts (e.g. 0.4..0.8 per swing for blades).
+const ZOMBIE_HEALTH: f32 = 3.0;
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 14.0;
 const ATTACK_RANGE: f32 = 0.9;
@@ -106,11 +130,19 @@ const ATTACK_DAMAGE: f32 = 12.0;
 const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 
 /// A zombie that shambles straight toward a visible player on the same floor.
+/// Melee weapon stats (damage and range follow the item scripts' units).
+#[derive(Clone, Copy, Debug)]
+pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32 }
+
+impl Weapon {
+    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30 };
+}
+
 #[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize, cooldown: u32 }
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32 }
 
 impl Zombie {
-    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z, cooldown: 0 } }
+    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0 } }
 
     pub fn tick(&mut self, target: &mut Player, world: &mut World) {
         self.cooldown = self.cooldown.saturating_sub(1);
