@@ -237,3 +237,48 @@ pub fn resolve_attack(r: AttackRolls, side: Side, zombies_attacking: u32) -> Hit
     let outcome = if (r.bite as i32) > bite { Outcome::Bite } else if (r.laceration as i32) > lac { Outcome::Laceration } else { Outcome::Scratch };
     Hit { outcome, damage: (r.dmg as f32 / 1000.0) * (r.dmg_scale as f32 + 10.0) }
 }
+
+/// A world sound (WorldSoundManager.WorldSound): zombies within `radius * hearing` are attracted.
+#[derive(Clone, Copy, Debug)]
+pub struct WorldSound {
+    pub pos: [f32; 2],
+    pub z: usize,
+    pub radius: f32,
+    pub volume: f32,
+    /// Zombies closer than this on the same floor ignore the sound.
+    pub zombie_ignore_dist: f32,
+    pub source_is_zombie: bool,
+}
+
+/// `WorldSoundManager.getHearingMultiplier`: sandbox hearing 1 = pinpoint (x3), 3 = poor (x0.45), else x1.
+pub fn hearing_multiplier(hearing: u8) -> f32 {
+    match hearing { 1 => 3.0, 3 => 0.45, _ => 1.0 }
+}
+
+/// WorldSoundManager.getSoundAttract. `rooms` is (different rooms, either point is outdoors).
+pub fn sound_attract(s: &WorldSound, zpos: [f32; 2], zz: usize, hearing: f32, rooms: (bool, bool)) -> f32 {
+    if s.radius == 0.0 || s.source_is_zombie { return 0.0; }
+    // Floors count as 3 tiles of distance, like the original's z * 3.
+    let dz = (zz as f32 - s.z as f32) * 3.0;
+    let dist_sq = (zpos[0] - s.pos[0]).powi(2) + (zpos[1] - s.pos[1]).powi(2) + dz * dz;
+    let radius = s.radius * hearing;
+    if dist_sq > radius * radius { return 0.0; }
+    if dist_sq < s.zombie_ignore_dist * s.zombie_ignore_dist && zz == s.z { return 0.0; }
+    let mut delta = dist_sq / (radius * radius);
+    if rooms.0 {
+        delta *= 1.2;
+        if rooms.1 { delta *= 1.4; }
+    }
+    s.volume * (1.0 - delta).clamp(0.0, 1.0)
+}
+
+impl Zombie {
+    /// React to the loudest audible sound: head for it unless already chasing something.
+    pub fn hear(&mut self, sounds: &[WorldSound]) {
+        let best = sounds.iter()
+            .map(|s| (sound_attract(s, self.pos, self.z, 1.0, (false, false)), s))
+            .filter(|(a, _)| *a > 0.0)
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, s)) = best { self.wander = Some(s.pos); self.z = self.z.min(s.z.max(self.z)); }
+    }
+}
