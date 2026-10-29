@@ -260,12 +260,16 @@ impl ApplicationHandler for App {
                     match event.state { ElementState::Pressed => { self.keys.insert(k); } ElementState::Released => { self.keys.remove(&k); } }
                     if k == KeyCode::Escape { el.exit(); }
                     if k == KeyCode::Space && event.state == ElementState::Pressed && !event.repeat {
-                        let w = self.weapon;
-                        let scn = &mut self.scene;
-                        scn.player.attack(&mut scn.zombies, &w);
+                        if let Some(net) = self.net.as_mut() { let _ = net.send(&pz_net::ClientMsg::Attack); } else {
+                            let w = self.weapon;
+                            let scn = &mut self.scene;
+                            scn.player.attack(&mut scn.zombies, &w);
+                        }
                     }
                     if k == KeyCode::KeyE && event.state == ElementState::Pressed && !event.repeat {
-                        self.scene.player.interact(&mut self.scene.world);
+                        if let Some(net) = self.net.as_mut() { let _ = net.send(&pz_net::ClientMsg::Interact); } else {
+                            self.scene.player.interact(&mut self.scene.world);
+                        }
                     }
                 }
             }
@@ -303,7 +307,8 @@ impl ApplicationHandler for App {
                     self.acc -= TICK_DT;
                 }
                 if let Some(net) = self.net.as_mut() {
-                    if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, .. })) = net.latest_snapshot() {
+                    if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, doors, .. })) = net.latest_snapshot() {
+                        self.scene.world.set_open_doors(doors.into_iter().map(|(x, y, z)| (x, y, z as usize)));
                         if let Some(me) = players.iter().find(|p| p.id == you) {
                             let pl = &mut self.scene.player;
                             pl.pos = me.pos; pl.z = me.z as usize; pl.height = me.z as f32; pl.health = me.health;

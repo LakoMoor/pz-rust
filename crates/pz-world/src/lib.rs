@@ -107,6 +107,18 @@ impl World {
         Some(if self.open_doors.remove(&k) { false } else { self.open_doors.insert(k); true })
     }
 
+    /// Open doors as `(x, y, z)` in a stable order (for network snapshots).
+    pub fn open_doors(&self) -> Vec<(i32, i32, usize)> {
+        let mut v: Vec<_> = self.open_doors.iter().copied().collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// Replace the set of open doors (client side, from a server snapshot).
+    pub fn set_open_doors(&mut self, doors: impl IntoIterator<Item = (i32, i32, usize)>) {
+        self.open_doors = doors.into_iter().collect();
+    }
+
     pub fn door_open(&self, x: i32, y: i32, z: usize) -> bool { self.open_doors.contains(&(x, y, z)) }
 
     /// Is this tile name a door panel (hidden while its door is open)?

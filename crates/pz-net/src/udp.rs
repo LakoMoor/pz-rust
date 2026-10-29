@@ -85,6 +85,8 @@ impl UdpClient {
         self.socket.send(&ClientMsg::Input { seq: self.seq, dir, run }.encode()).map(|_| ())
     }
 
+    pub fn send(&mut self, msg: &ClientMsg) -> io::Result<()> { self.socket.send(&msg.encode()).map(|_| ()) }
+
     /// Latest snapshot waiting in the socket, if any (older ones are discarded).
     pub fn latest_snapshot(&mut self) -> io::Result<Option<ServerMsg>> {
         let mut buf = vec![0u8; MAX_DATAGRAM];

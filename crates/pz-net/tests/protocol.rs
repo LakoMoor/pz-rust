@@ -11,12 +11,14 @@ fn messages_round_trip_and_reject_garbage() {
     let s = ServerMsg::Snapshot {
         tick: 3,
         you: 1,
+        doors: vec![(5, -3, 1)],
         players: vec![PlayerState { id: 1, pos: [1.5, 2.5], z: 1, health: 90.0 }],
         zombies: vec![ZombieState { pos: [0.0, 4.0], z: 0, health: 3.0 }],
     };
     assert_eq!(ServerMsg::decode(&s.encode()), Ok(s.clone()));
     let bytes = s.encode();
     assert_eq!(ServerMsg::decode(&bytes[..bytes.len() - 1]), Err(DecodeError::Truncated));
+    for m in [ClientMsg::Attack, ClientMsg::Interact] { assert_eq!(ClientMsg::decode(&m.encode()), Ok(m)); }
     assert_eq!(ClientMsg::decode(&[9]), Err(DecodeError::BadTag(9)));
 }
 
@@ -50,4 +52,18 @@ fn zombies_chase_the_nearest_player() {
     let ServerMsg::Snapshot { zombies, players, .. } = snap.unwrap();
     assert!(zombies[0].pos[1] > 0.5, "zombie heads toward player 2 (y axis): {:?}", zombies[0].pos);
     assert_eq!(players[0].health, 100.0);
+}
+
+#[test]
+fn attack_message_kills_zombies_on_the_server() {
+    use pz_sim::Weapon;
+    let mut s = Server::new(World::new("nonexistent"), vec![Zombie::new(0.8, 0.0, 0)]);
+    s.set_weapon(Weapon { damage: 5.0, range: 1.2, cooldown_ticks: 10 });
+    s.join(1, 0.0, 0.0);
+    s.handle(1, ClientMsg::Input { seq: 1, dir: [1.0, 0.0], run: false });
+    s.tick(); // face +x
+    s.handle(1, ClientMsg::Input { seq: 2, dir: [0.0, 0.0], run: false });
+    s.handle(1, ClientMsg::Attack);
+    let ServerMsg::Snapshot { zombies, .. } = s.tick();
+    assert!(zombies.is_empty(), "zombie should be dead: {zombies:?}");
 }
