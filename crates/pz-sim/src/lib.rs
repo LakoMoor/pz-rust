@@ -34,6 +34,12 @@ impl Player {
         self.update_level(before, world);
     }
 
+    /// Open/close the nearest door on the player's square or an orthogonal neighbour.
+    pub fn interact(&self, world: &mut World) -> bool {
+        let (x, y) = square_of(self.pos);
+        [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)].iter().any(|&(dx, dy)| world.toggle_door(x + dx, y + dy, self.z).is_some())
+    }
+
     fn move_xy(&mut self, input: Input, world: &mut World) {
         let len = (input.dir[0] * input.dir[0] + input.dir[1] * input.dir[1]).sqrt();
         if len < 1e-4 { return; }

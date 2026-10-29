@@ -66,6 +66,7 @@ impl Scene {
                         if let Some(col) = self.world.column(x, y, z) {
                             for (i, name) in col.names.iter().enumerate() {
                                 if (i == 0) != (pass == 0) { continue; }
+                                if self.world.is_door_tile(name) && self.world.door_open(x, y, z) { continue; }
                                 let Some(s) = self.assets.sprite(name) else { continue };
                                 let (pw, ph) = (ATLAS as f32, ATLAS as f32);
                                 emit(&mut inst, &mut batches, s.page, Instance {
@@ -242,6 +243,9 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(k) = event.physical_key {
                     match event.state { ElementState::Pressed => { self.keys.insert(k); } ElementState::Released => { self.keys.remove(&k); } }
                     if k == KeyCode::Escape { el.exit(); }
+                    if k == KeyCode::KeyE && event.state == ElementState::Pressed && !event.repeat {
+                        self.scene.player.interact(&mut self.scene.world);
+                    }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {

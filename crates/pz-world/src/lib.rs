@@ -1,6 +1,6 @@
 //! Lazy, cell-based view of a PZ map (tile columns at integer coordinates).
 use pz_formats::lot::{decode_chunk, Level, LotHeader, LotPack, CHUNK};
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}};
 
 pub const CELL: i32 = 256;
 const CHUNKS_PER_CELL: usize = (CELL as usize) / CHUNK;
@@ -26,6 +26,9 @@ pub mod flag {
     pub const STAIR_BW: u16 = 64;
     pub const STAIR_MW: u16 = 128;
     pub const STAIR_TW: u16 = 256;
+    /// Door panel on the north / west edge (blocks like a wall while closed).
+    pub const DOOR_N: u16 = 512;
+    pub const DOOR_W: u16 = 1024;
 }
 
 fn tile_flags(props: &[(String, String)]) -> u16 {
@@ -39,8 +42,10 @@ fn tile_flags(props: &[(String, String)]) -> u16 {
             "stairsBW" => flag::STAIR_BW, "stairsMW" => flag::STAIR_MW, "stairsTW" => flag::STAIR_TW,
             _ => 0,
         };
-        if matches!(k, "WallN" | "WallNW" | "DoorWallN" | "WindowN" | "windowN" | "collideN") { f |= flag::EDGE_N; }
-        if matches!(k, "WallW" | "WallNW" | "DoorWallW" | "WindowW" | "windowW" | "collideW") { f |= flag::EDGE_W; }
+        if k == "doorN" { f |= flag::DOOR_N; }
+        if k == "doorW" { f |= flag::DOOR_W; }
+        if matches!(k, "WallN" | "WallNW" | "WindowN" | "windowN" | "collideN") { f |= flag::EDGE_N; }
+        if matches!(k, "WallW" | "WallNW" | "WindowW" | "windowW" | "collideW") { f |= flag::EDGE_W; }
     }
     f
 }
@@ -50,6 +55,7 @@ pub struct World {
     cells: HashMap<(i32, i32), Option<Cell>>,
     /// tile name -> collision flags (only tiles with any flag).
     flags: HashMap<String, u16>,
+    open_doors: HashSet<(i32, i32, usize)>,
 }
 
 /// One tile column: ordered tile names, bottom first.
@@ -66,7 +72,7 @@ fn load_cell(dir: &Path, cx: i32, cy: i32) -> Option<Cell> {
 impl World {
     /// `map_dir` is e.g. `<PZ>/media/maps/Muldraugh, KY`.
     pub fn new(map_dir: impl Into<PathBuf>) -> Self {
-        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new() }
+        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new() }
     }
 
     /// Load collision flags from the game's `*.tiles` definition files in `media/`.
@@ -86,7 +92,26 @@ impl World {
     /// Collision flags of square (x, y, z); 0 if empty or not loaded. Loads the chunk if needed.
     pub fn flags(&mut self, x: i32, y: i32, z: usize) -> u16 {
         if !self.ensure(x, y) { return 0; }
-        self.column(x, y, z).map_or(0, |c| c.names.iter().filter_map(|n| self.flags.get(*n)).fold(0, |a, b| a | b))
+        let mut f = self.column(x, y, z).map_or(0, |c| c.names.iter().filter_map(|n| self.flags.get(*n)).fold(0, |a, b| a | b));
+        if !self.open_doors.contains(&(x, y, z)) {
+            if f & flag::DOOR_N != 0 { f |= flag::EDGE_N; }
+            if f & flag::DOOR_W != 0 { f |= flag::EDGE_W; }
+        }
+        f
+    }
+
+    /// Open/close the door on square (x, y, z). Returns the new state, or `None` if there is no door.
+    pub fn toggle_door(&mut self, x: i32, y: i32, z: usize) -> Option<bool> {
+        if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 { return None; }
+        let k = (x, y, z);
+        Some(if self.open_doors.remove(&k) { false } else { self.open_doors.insert(k); true })
+    }
+
+    pub fn door_open(&self, x: i32, y: i32, z: usize) -> bool { self.open_doors.contains(&(x, y, z)) }
+
+    /// Is this tile name a door panel (hidden while its door is open)?
+    pub fn is_door_tile(&self, name: &str) -> bool {
+        self.flags.get(name).is_some_and(|f| f & (flag::DOOR_N | flag::DOOR_W) != 0)
     }
 
     /// True if there is a floor (or roof deck) tile to stand on at level `z`.
