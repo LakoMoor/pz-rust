@@ -58,7 +58,7 @@ fn zombies_chase_the_nearest_player() {
 fn attack_message_kills_zombies_on_the_server() {
     use pz_sim::Weapon;
     let mut s = Server::new(World::new("nonexistent"), vec![Zombie::new(0.8, 0.0, 0)]);
-    s.set_weapon(Weapon { damage: 5.0, range: 1.2, cooldown_ticks: 10, crit_chance: 0.0, crit_mult: 1.0 });
+    s.set_weapon(Weapon { damage: 5.0, range: 1.2, cooldown_ticks: 10, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false });
     s.join(1, 0.0, 0.0);
     s.handle(1, ClientMsg::Input { seq: 1, dir: [1.0, 0.0], run: false });
     s.tick(); // face +x

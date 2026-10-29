@@ -63,8 +63,8 @@ impl Player {
             let front = dist < 1e-4 || (d[0] * self.facing[0] + d[1] * self.facing[1]) / dist > 0.5;
             if dist <= weapon.range && front {
                 self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
-                let crit = (self.rng % 100) < weapon.crit_chance as u32;
-                zb.hit(weapon.damage, crit, weapon.crit_mult, self.pos);
+                let crit = (self.rng % 100) < melee_crit_chance(weapon.crit_chance, false, 2.0, 0) as u32;
+                zb.hit(weapon, weapon.damage, crit, self.pos);
                 struck = true;
             }
         }
@@ -166,39 +166,49 @@ const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 /// A zombie that shambles straight toward a visible player on the same floor.
 /// Melee weapon stats (damage and range follow the item scripts' units).
 #[derive(Clone, Copy, Debug)]
-pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32, pub crit_chance: f32, pub crit_mult: f32 }
+pub struct Weapon { pub damage: f32, pub range: f32, pub cooldown_ticks: u32, pub crit_chance: f32, pub crit_mult: f32, pub push_back_mod: f32, pub small_blade: bool }
 
 impl Weapon {
-    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0 };
+    pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false };
 }
 
 #[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub on_floor: bool, pub knocked_down: bool, pub reanimate_timer: f32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng };
         zb.idle_timer = zb.pick_wander_interval();
         zb
     }
 
-    /// IsoGameCharacter.Hit / processHitDamage for a player's melee hit (default traits, no skill).
-    /// Returns the damage dealt. `from` is the wielder's position.
-    pub fn hit(&mut self, base_damage: f32, crit: bool, crit_mult: f32, from: [f32; 2]) -> f32 {
-        // Repeated hits on one zombie scale up after the third (hitTime >= 4: x (hitTime - 2) * 1.5).
+    /// IsoZombie.Hit -> IsoGameCharacter.Hit/processHitDamage/hitConsequences for a player's melee hit
+    /// (default traits: Strength 5 so shovingMod 1.0, full endurance). Returns the damage dealt.
+    pub fn hit(&mut self, w: &Weapon, damage_roll: f32, crit: bool, from: [f32; 2]) -> f32 {
+        // Repeated hits scale up after the third: hitTime >= 4 -> x (hitTime - 2) * 1.5.
         self.hit_time += 1;
-        let mut dmg = base_damage;
-        if self.hit_time >= 4 { dmg *= (self.hit_time as f32 - 2.0) * 1.5; }
-        // From behind (dot of wielder->zombie with the zombie's facing > -0.3): x1.5.
+        let mut split = damage_roll;
+        if self.hit_time >= 4 { split *= (self.hit_time as f32 - 2.0) * 1.5; }
+        // hitForce = min(damage * shovingMod, 1), doubled for a player's non-shove hit.
+        let hit_force = split.min(1.0) * 2.0;
+        let mut dmg = split;
+        // From behind (dot(wielder->zombie, zombie facing) > -0.3): x1.5.
         let d = [self.pos[0] - from[0], self.pos[1] - from[1]];
         let l = d[0].hypot(d[1]).max(1e-6);
         if (d[0] * self.facing[0] + d[1] * self.facing[1]) / l > -0.3 { dmg *= 1.5; }
-        if crit { dmg *= crit_mult.max(2.0); }
+        if crit { dmg *= w.crit_mult.max(2.0); }
         self.health -= dmg;
         if self.health > 0.0 {
-            // Approximation: a surviving zombie staggers for ~0.5 s per unit of hit force.
-            let force = (dmg * 2.0).min(2.0);
-            self.stagger = (force * 15.0) as u32;
+            // Hit reaction: IsoZombie.hitConsequences -> knockedDown = crit || onFloor || alwaysKnockedDown.
+            self.knocked_down = crit || self.on_floor;
+            // StaggerBackState.getMaxStaggerTime: clamp(35 * hitForce * staggerTimeMod, 20, 30).
+            let stagger_mod = if w.small_blade { 0.0 } else { w.push_back_mod };
+            self.stagger = (35.0 * hit_force * stagger_mod).clamp(20.0, 30.0) as u32;
+            if self.knocked_down && !self.on_floor {
+                // Falls down (ZombieOnGroundState.startReanimateTimer: Rand.Next(60) + 30).
+                self.on_floor = true;
+                self.reanimate_timer = (30 + self.rand(60)) as f32;
+            }
         }
         dmg
     }
@@ -231,6 +241,12 @@ impl Zombie {
 
     pub fn tick(&mut self, target: &mut Player, world: &mut World) {
         self.cooldown = self.cooldown.saturating_sub(1);
+        if self.on_floor {
+            // ZombieOnGroundState: lie there until the reanimate timer runs out, then get up.
+            self.reanimate_timer -= 1.0;
+            if self.reanimate_timer <= 0.0 { self.on_floor = false; self.knocked_down = false; }
+            return;
+        }
         if self.stagger > 0 { self.stagger -= 1; return; }
         if target.z != self.z { self.idle(world); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];

@@ -17,6 +17,9 @@ pub struct ItemDef {
     pub swing_time: f32,
     pub crit_chance: f32,
     pub crit_dmg_multiplier: f32,
+    pub push_back_mod: f32,
+    /// `Categories` contains `base:smallblade` (such weapons never stagger zombies).
+    pub small_blade: bool,
 }
 
 #[derive(Default)]
@@ -38,6 +41,8 @@ fn def(module: &str, b: &Block) -> ItemDef {
         swing_time: num(b, "Swingtime"),
         crit_chance: num(b, "CriticalChance"),
         crit_dmg_multiplier: num(b, "CritDmgMultiplier"),
+        push_back_mod: b.prop("PushBackMod").and_then(|v| v.parse().ok()).unwrap_or(1.0),
+        small_blade: b.prop("Categories").is_some_and(|c| c.contains("smallblade")),
     }
 }
 
