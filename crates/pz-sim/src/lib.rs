@@ -553,11 +553,17 @@ pub struct GameClock {
     pub day_seconds: f32,
     /// Today's morning fog, if any.
     pub fog: Option<FogDay>,
+    /// Sandbox `dayNightCycle`.
+    pub cycle: DayNight,
 }
 
 impl Default for GameClock {
-    fn default() -> Self { GameClock { hour: 9.0, dawn: 7.0, dusk: 21.0, day_seconds: 3600.0, fog: None } }
+    fn default() -> Self { GameClock { hour: 9.0, dawn: 7.0, dusk: 21.0, day_seconds: 3600.0, fog: None, cycle: DayNight::Normal } }
 }
+
+/// Sandbox `dayNightCycle`: 1 = normal, 2 = endless day, 3 = endless night (`ClimateValues` pins the night strength).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DayNight { #[default] Normal, EndlessDay, EndlessNight }
 
 /// One day's morning fog (`ClimateValues.dayDoFog / dayFogStrength / dayFogDuration`). The original rolls these per
 /// day from a seeded generator and the temperature; here the caller supplies them.
@@ -595,6 +601,7 @@ impl GameClock {
     }
     /// 0 in daylight, 1 deep in the night (`ClimateValues.nightStrength`).
     pub fn night_strength(&self) -> f32 {
+        match self.cycle { DayNight::EndlessDay => return 0.0, DayNight::EndlessNight => return 1.0, DayNight::Normal => {} }
         (time_lerp_hours(self.hour, self.dusk, self.dawn) * 2.0).clamp(0.0, 1.0)
     }
     /// Daylight strength, ignoring the small wind/time-of-day reductions of the original.

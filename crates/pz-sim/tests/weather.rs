@@ -83,3 +83,15 @@ fn morning_fog_builds_peaks_and_burns_off() {
     assert_eq!(GameClock { hour: 8.0, ..GameClock::default() }.fog_intensity(), 0.0);
     assert_eq!(day(8.0).weather_now(0.0).vision_radius(), 13.0);
 }
+
+#[test]
+fn endless_day_and_night_pin_the_light() {
+    let at = |hour, cycle| GameClock { hour, cycle, ..GameClock::default() };
+    for h in [2.0, 12.0, 23.0] {
+        assert_eq!(at(h, DayNight::EndlessDay).night_strength(), 0.0);
+        assert_eq!(at(h, DayNight::EndlessNight).night_strength(), 1.0);
+    }
+    assert_eq!(at(12.0, DayNight::EndlessNight).weather(0.0, 0.0).vision_radius(), 15.0);
+    assert_eq!(at(2.0, DayNight::EndlessDay).weather(0.0, 0.0).vision_radius(), 20.0);
+    assert!(at(2.0, DayNight::Normal).night_strength() > 0.99);
+}
