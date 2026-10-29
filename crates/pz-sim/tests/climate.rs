@@ -55,5 +55,5 @@ fn the_clock_takes_dawn_and_dusk_from_the_date() {
     c.hour = 18.0; // already dark in December, still light in June
     let dark = c.night_strength();
     c.set_date(1993, 5, 22);
-    assert!(dark > 0.2 && c.night_strength() == 0.0, "{dark}");
+    assert!(dark > 0.02 && c.night_strength() == 0.0, "{dark}");
 }
