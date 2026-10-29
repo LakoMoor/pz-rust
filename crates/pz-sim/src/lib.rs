@@ -41,22 +41,8 @@ impl Player {
     }
 
     fn move_xy(&mut self, input: Input, world: &mut World) {
-        let len = (input.dir[0] * input.dir[0] + input.dir[1] * input.dir[1]).sqrt();
-        if len < 1e-4 { return; }
-        let step = if input.run { RUN } else { WALK } * TICK_DT;
-        for axis in 0..2 {
-            let d = input.dir[axis] / len * step;
-            if d == 0.0 { continue; }
-            let mut np = self.pos;
-            np[axis] += d;
-            let (from, to) = (square_of(self.pos), square_of(np));
-            let exits_stairs = from != to && {
-                // Leaving a staircase's top step through its far edge climbs a floor, walls below notwithstanding.
-                let f = world.flags(from.0, from.1, self.z);
-                (f & flag::STAIR_TN != 0 && to == (from.0, from.1 - 1)) || (f & flag::STAIR_TW != 0 && to == (from.0 - 1, from.1))
-            };
-            if from == to || exits_stairs || world.can_step(from, to, self.z) { self.pos = np; }
-        }
+        let speed = if input.run { RUN } else { WALK };
+        slide(&mut self.pos, self.z, input.dir, speed, world, true);
     }
 
     /// Stairs: leaving a staircase's top step climbs a floor; walking into the hole above one descends.
@@ -87,5 +73,45 @@ impl Player {
         let w = piece(flag::STAIR_BW, flag::STAIR_MW).or(if f & flag::STAIR_TW != 0 { Some(2.0) } else { None });
         if let Some(i) = w { return (i + (sx as f32 + 0.5 - self.pos[0]).clamp(0.0, 1.0)) / 3.0; }
         0.0
+    }
+}
+
+/// Move `pos` along `dir` for one tick, resolving axes separately so walkers slide along walls.
+/// `stairs` allows leaving a staircase's top step (climbing is handled by the caller).
+fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut World, stairs: bool) {
+    let len = (dir[0] * dir[0] + dir[1] * dir[1]).sqrt();
+    if len < 1e-4 { return; }
+    let step = speed * TICK_DT;
+    for axis in 0..2 {
+        let d = dir[axis] / len * step;
+        if d == 0.0 { continue; }
+        let mut np = *pos;
+        np[axis] += d;
+        let (from, to) = (square_of(*pos), square_of(np));
+        let exits_stairs = stairs && from != to && {
+            // Leaving a staircase's top step through its far edge climbs a floor, walls below notwithstanding.
+            let f = world.flags(from.0, from.1, z);
+            (f & flag::STAIR_TN != 0 && to == (from.0, from.1 - 1)) || (f & flag::STAIR_TW != 0 && to == (from.0 - 1, from.1))
+        };
+        if from == to || exits_stairs || world.can_step(from, to, z) { *pos = np; }
+    }
+}
+
+const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
+const ZOMBIE_SIGHT: f32 = 14.0;
+
+/// A zombie that shambles straight toward a visible player on the same floor.
+#[derive(Clone, Copy)]
+pub struct Zombie { pub pos: [f32; 2], pub z: usize }
+
+impl Zombie {
+    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z } }
+
+    pub fn tick(&mut self, target: &Player, world: &mut World) {
+        if target.z != self.z { return; }
+        let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
+        let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        if dist > ZOMBIE_SIGHT || dist < 0.6 { return; }
+        slide(&mut self.pos, self.z, d, ZOMBIE_SPEED, world, false);
     }
 }

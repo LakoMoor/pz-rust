@@ -3,7 +3,7 @@ mod render;
 
 use assets::Assets;
 use render::{Batch, Instance, Renderer, ATLAS, WHITE, WHITE_UV};
-use pz_sim::{square_of, Input, Player, TICK_DT};
+use pz_sim::{square_of, Input, Player, Zombie, TICK_DT};
 use pz_world::World;
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
@@ -12,7 +12,7 @@ const HALF_H: f32 = 32.0;
 const LEVEL_PX: f32 = 192.0; // height of one floor on screen (3 tiles)
 const MAX_Z: usize = 7;
 
-struct Scene { assets: Assets, world: World, player: Player }
+struct Scene { assets: Assets, world: World, player: Player, zombies: Vec<Zombie> }
 
 /// Continuous tile coordinates -> screen-space (pixel) position.
 fn pos_to_screen(p: [f32; 2]) -> [f32; 2] { [(p[0] - p[1]) * HALF_W, (p[0] + p[1]) * HALF_H] }
@@ -74,6 +74,14 @@ impl Scene {
                                     size: [s.w as f32, s.h as f32],
                                     uv: [s.x as f32 / pw, s.y as f32 / ph, (s.x + s.w) as f32 / pw, (s.y + s.h) as f32 / ph],
                                     color: [1.0; 4], layer: 0.0,
+                                });
+                            }
+                        }
+                        if pass == 1 {
+                            for zb in self.zombies.iter().filter(|zb| zb.z == z && square_of(zb.pos) == (x, y)) {
+                                let f = pos_to_screen(zb.pos);
+                                emit(&mut inst, &mut batches, WHITE, Instance {
+                                    pos: [f[0] - 12.0, f[1] - 80.0 - z as f32 * LEVEL_PX], size: [24.0, 80.0], uv: WHITE_UV, color: [0.35, 0.55, 0.3, 1.0], layer: 0.0,
                                 });
                             }
                         }
@@ -148,7 +156,12 @@ fn make_scene(a: &Args) -> Scene {
         .map(|(dx, dy)| (cx + dx, cy + dy))
         .find(|&(x, y)| world.flags(x, y, 0) & pz_world::flag::SOLID == 0 && world.column(x, y, 0).is_some())
         .unwrap_or((cx, cy));
-    Scene { assets, world, player: Player::new(sx as f32, sy as f32) }
+    // A handful of zombies ringed around the spawn point (walkable squares only).
+    let zombies = [(-7, -2), (6, 5), (-4, 8), (9, -6), (2, -9)].iter()
+        .map(|&(dx, dy)| (sx + dx, sy + dy))
+        .filter(|&(x, y)| world.has_floor(x, y, 0) && world.flags(x, y, 0) & pz_world::flag::SOLID == 0)
+        .map(|(x, y)| Zombie::new(x as f32, y as f32, 0)).collect();
+    Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies }
 }
 
 /// Render one frame to a PNG without opening a window (also the cross-platform regression hook).
@@ -272,6 +285,8 @@ impl ApplicationHandler for App {
                 self.acc += dt;
                 while self.acc >= TICK_DT {
                     self.scene.player.tick(input, &mut self.scene.world);
+                    let scn = &mut self.scene;
+                    for zb in &mut scn.zombies { zb.tick(&scn.player, &mut scn.world); }
                     self.acc -= TICK_DT;
                 }
                 self.center = player_cam(&self.scene.player);
