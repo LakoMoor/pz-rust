@@ -139,17 +139,47 @@ impl Weapon {
 }
 
 #[derive(Clone, Copy)]
-pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32 }
+pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, idle_timer: f32, wander: Option<[f32; 2]>, rng: u32 }
 
 impl Zombie {
-    pub fn new(x: f32, y: f32, z: usize) -> Self { Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0 } }
+    pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, idle_timer: 0.0, wander: None, rng };
+        zb.idle_timer = zb.pick_wander_interval();
+        zb
+    }
+
+    /// xorshift32 in `0..n` (deterministic per zombie).
+    fn rand(&mut self, n: u32) -> u32 {
+        self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+        self.rng % n
+    }
+
+    /// ZombieIdleState.pickRandomWanderInterval: Rand.Next(400, 1000), x1.5 when it is not raining.
+    fn pick_wander_interval(&mut self) -> f32 { (400 + self.rand(600)) as f32 * 1.5 }
+
+    /// ZombieIdleState.execute: with no target, every so often pick a free square within +-4 and walk there.
+    fn idle(&mut self, world: &mut World) {
+        self.idle_timer -= 1.0;
+        if self.idle_timer <= 0.0 {
+            self.idle_timer = self.pick_wander_interval();
+            let (sx, sy) = square_of(self.pos);
+            let (x, y) = (sx + self.rand(8) as i32 - 4, sy + self.rand(8) as i32 - 4);
+            if world.has_floor(x, y, self.z) && world.flags(x, y, self.z) & flag::SOLID == 0 {
+                self.wander = Some([x as f32, y as f32]);
+            }
+        }
+        if let Some(t) = self.wander {
+            let d = [t[0] - self.pos[0], t[1] - self.pos[1]];
+            if d[0].hypot(d[1]) < 0.2 { self.wander = None; } else { slide(&mut self.pos, self.z, d, ZOMBIE_SPEED * 0.5, world, false); }
+        }
+    }
 
     pub fn tick(&mut self, target: &mut Player, world: &mut World) {
         self.cooldown = self.cooldown.saturating_sub(1);
-        if target.z != self.z { return; }
+        if target.z != self.z { self.idle(world); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if dist > ZOMBIE_SIGHT { return; }
+        if dist > ZOMBIE_SIGHT { self.idle(world); return; }
         if dist < ATTACK_RANGE {
             if self.cooldown == 0 { target.health = (target.health - ATTACK_DAMAGE).max(0.0); self.cooldown = ATTACK_COOLDOWN; }
             return;
