@@ -3,6 +3,7 @@ use pz_world::{flag, World};
 
 pub mod firearm;
 pub mod simplex;
+pub mod jrandom;
 
 pub const TICK_HZ: f32 = 30.0;
 pub const TICK_DT: f32 = 1.0 / TICK_HZ;
