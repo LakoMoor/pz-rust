@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pz-rust — Project Zomboid in Rust</title>
+<meta name="description" content="A from-scratch, cross-platform Rust reimplementation of Project Zomboid (Build 42), verified against the original with differential tests.">
+<meta property="og:title" content="pz-rust — Project Zomboid in Rust">
+<meta property="og:description" content="From-scratch Rust port of Project Zomboid: wgpu renderer for Windows, Linux and macOS.">
+<meta property="og:image" content="img/social.jpg">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg:#0f130f; --panel:#181e17; --fg:#e4e8df; --dim:#9aa593; --accent:#d98a4a; --green:#8fbf4a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color:var(--green); }
+  header, section, footer { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { padding-top: 56px; display:flex; gap:28px; align-items:center; flex-wrap:wrap; }
+  header img { width:112px; height:112px; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); margin:0; letter-spacing:-0.02em; }
+  h1 span { color: var(--accent); }
+  .lead { color:var(--dim); margin:.4em 0 0; max-width: 46ch; }
+  .hero { max-width:1040px; margin:36px auto 0; padding:0 24px; }
+  .hero img, figure img { width:100%; height:auto; display:block; border-radius:12px; border:1px solid #2a3329; }
+  h2 { margin:56px 0 12px; font-size:1.4rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+  .card { background:var(--panel); border:1px solid #2a3329; border-radius:12px; padding:16px 18px; }
+  .card b { color:var(--accent); }
+  figure { margin:0; }
+  figcaption { color:var(--dim); font-size:.9rem; margin-top:6px; }
+  pre { background:var(--panel); border:1px solid #2a3329; border-radius:12px; padding:16px; overflow:auto; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size:.92rem; }
+  .btn { display:inline-block; margin-top:18px; padding:10px 18px; border-radius:10px; background:var(--accent); color:#1a1208; font-weight:600; text-decoration:none; }
+  footer { color:var(--dim); font-size:.85rem; padding-top:48px; padding-bottom:48px; }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.svg" alt="pz-rust logo">
+  <div>
+    <h1>pz<span>-</span>rust</h1>
+    <p class="lead">Project Zomboid, rebuilt from scratch in Rust. Fast, cross-platform, and checked against the original with differential tests.</p>
+    <a class="btn" href="https://github.com/LakoMoor/pz-rust">View on GitHub</a>
+  </div>
+</header>
+
+<div class="hero"><img src="img/town.jpg" alt="Muldraugh street rendered by pz-rust"></div>
+
+<section>
+  <h2>What works today</h2>
+  <div class="grid">
+    <div class="card"><b>Real map data.</b> All 4,065 Muldraugh cells (4.16M chunks) decode byte-exactly from your own install.</div>
+    <div class="card"><b>wgpu renderer.</b> Vulkan, DX12 and Metal. Every atlas page lives in array-texture slabs: one draw call per frame instead of 1,270.</div>
+    <div class="card"><b>Floors &amp; roofs.</b> Multi-storey buildings render with correct stacking; roofs hide when you walk indoors.</div>
+    <div class="card"><b>Deterministic sim.</b> Fixed 30&nbsp;Hz tick with wall-aware movement driven by the game's own tile properties.</div>
+  </div>
+
+  <h2>Screenshots</h2>
+  <div class="grid">
+    <figure><img src="img/bank.jpg" alt="Knox Bank and rooftops" loading="lazy"><figcaption>Knox Bank with the roof level drawn.</figcaption></figure>
+    <figure><img src="img/rooftop.jpg" alt="Rooftop with AC unit and satellite dish" loading="lazy"><figcaption>Rooftop detail across stacked floors.</figcaption></figure>
+  </div>
+
+  <h2>Try it</h2>
+  <pre><code>git clone https://github.com/LakoMoor/pz-rust
+cd pz-rust
+set PZ_DIR=C:\path\to\ProjectZomboid
+cargo run --release -p pz-viewer</code></pre>
+  <p>WASD to walk, Shift to run, mouse wheel to zoom. <code>--shot out.png</code> renders a frame headlessly.</p>
+
+  <h2>Roadmap</h2>
+  <p>Characters &amp; animation, doors, stairs, items and Lua scripting, zombies, audio, then a headless server with networking.</p>
+</section>
+
+<footer>
+  pz-rust is an unofficial fan project, not affiliated with or endorsed by The Indie Stone. It ships no game assets and requires your own legitimate copy of Project Zomboid. Screenshots show content from the original game. Inspired by <a href="https://github.com/horizon-rust/horizon">horizon-rust/horizon</a>.
+</footer>
+</body>
+</html>

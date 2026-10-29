@@ -1,0 +1,17 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux windowing deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwayland-dev libxkbcommon-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      # Tests that need the user's own game files skip themselves when PZ_DIR is unset/absent.
+      - run: cargo test --workspace --release
+      - run: cargo build --workspace --release

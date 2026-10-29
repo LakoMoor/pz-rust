@@ -1,0 +1,8 @@
+[package]
+name = "pz-formats"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+thiserror = "2"
+png = "0.17"

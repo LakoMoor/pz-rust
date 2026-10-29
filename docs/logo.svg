@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="pz-rust logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232a22"/><stop offset="1" stop-color="#0f130f"/></linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="url(#bg)"/>
+  <!-- isometric cube (a map tile with a wall) -->
+  <path d="M128 52 L204 92 L128 132 L52 92 Z" fill="#d98a4a"/>
+  <path d="M52 92 L128 132 L128 214 L52 174 Z" fill="#a8531f"/>
+  <path d="M204 92 L128 132 L128 214 L204 174 Z" fill="#7d3a14"/>
+  <!-- window and door cut-outs -->
+  <path d="M146 150 L186 128 L186 156 L146 178 Z" fill="#1a2018"/>
+  <path d="M70 130 L110 152 L110 190 L70 168 Z" fill="#1a2018"/>
+  <!-- infected-green rim -->
+  <path d="M128 52 L204 92 L204 174 L128 214 L52 174 L52 92 Z" fill="none" stroke="#8fbf4a" stroke-width="6" stroke-linejoin="round"/>
+</svg>
