@@ -158,6 +158,7 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
 
 /// A hit-point scale comparable to weapon damages in the item scripts (e.g. 0.4..0.8 per swing for blades).
 const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keeps the sim deterministic
+const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
 
@@ -213,11 +214,13 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     /// Per-zombie sight setting (sandbox `lore.sight`).
     pub sight: Sight,
     /// Crawler: `IsoZombie.doCrawlerSpeed` speedMod (0.3 + 0..0.15) instead of a shambler's (about 0.625).
-    crawl_mod: Option<f32> }
+    crawl_mod: Option<f32>,
+    /// Climbing a window or fence: ticks left and the square being climbed to.
+    climb: Option<(u32, (i32, i32))> }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, climb: None };
         zb.idle_timer = zb.pick_wander_interval();
         zb
     }
@@ -295,6 +298,12 @@ impl Zombie {
 
     pub fn tick_in(&mut self, target: &mut Player, world: &mut World, weather: &Weather) {
         self.cooldown = self.cooldown.saturating_sub(1);
+        if let Some((left, dest)) = self.climb {
+            if self.on_floor || self.stagger > 0 { self.climb = None; } else {
+                if left <= 1 { self.pos = [dest.0 as f32, dest.1 as f32]; self.climb = None; } else { self.climb = Some((left - 1, dest)); }
+                return;
+            }
+        }
         if self.on_floor {
             // ZombieOnGroundState: lie there until the reanimate timer runs out, then get up.
             self.reanimate_timer -= 1.0;
@@ -333,6 +342,7 @@ impl Zombie {
             if (end.0 - t.0).abs() + (end.1 - t.1).abs() > 3 { self.path.clear(); }
             return;
         }
+        if self.try_climb(d, world) { return; }
         let before = self.pos;
         self.step_toward(d, world);
         if self.pos == before {
@@ -344,6 +354,30 @@ impl Zombie {
         } else {
             self.stuck = 0;
         }
+    }
+
+    pub fn is_climbing(&self) -> bool { self.climb.is_some() }
+
+    /// ClimbThroughWindowState / ClimbOverFenceState: standing at a window or hoppable fence that lies in the way,
+    /// start climbing over it. The original times this by animation events; `CLIMB_TICKS` approximates that.
+    fn try_climb(&mut self, d: [f32; 2], world: &mut World) -> bool {
+        if self.crawl_mod.is_some() { return false; } // crawlers cannot climb
+        let from = square_of(self.pos);
+        let axes = if d[0].abs() >= d[1].abs() { [0, 1] } else { [1, 0] };
+        for a in axes {
+            if d[a].abs() < 0.05 { continue; }
+            let sgn = d[a].signum() as i32;
+            let to = if a == 0 { (from.0 + sgn, from.1) } else { (from.0, from.1 + sgn) };
+            // Only when pressed up against the edge.
+            let edge = [from.0, from.1][a] as f32 + 0.5 * sgn as f32;
+            if (self.pos[a] - edge).abs() > 0.2 { continue; }
+            if !world.can_step(from, to, self.z) && world.hurdle(from, to, self.z) {
+                self.climb = Some((CLIMB_TICKS, to));
+                self.facing = if a == 0 { [sgn as f32, 0.0] } else { [0.0, sgn as f32] };
+                return true;
+            }
+        }
+        false
     }
 
     fn step_toward(&mut self, d: [f32; 2], world: &mut World) {

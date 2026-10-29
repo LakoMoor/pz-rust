@@ -29,6 +29,12 @@ pub mod flag {
     /// Door panel on the north / west edge (blocks like a wall while closed).
     pub const DOOR_N: u16 = 512;
     pub const DOOR_W: u16 = 1024;
+    /// Window on the north / west edge (also sets the matching EDGE bit; can be climbed through).
+    pub const WINDOW_N: u16 = 2048;
+    pub const WINDOW_W: u16 = 4096;
+    /// Hoppable fence / low wall on the north / west edge (also sets the matching EDGE bit; can be climbed over).
+    pub const HOP_N: u16 = 8192;
+    pub const HOP_W: u16 = 16384;
 }
 
 fn tile_flags(props: &[(String, String)]) -> u16 {
@@ -44,8 +50,12 @@ fn tile_flags(props: &[(String, String)]) -> u16 {
         };
         if k == "doorN" { f |= flag::DOOR_N; }
         if k == "doorW" { f |= flag::DOOR_W; }
-        if matches!(k, "WallN" | "WallNW" | "WindowN" | "windowN" | "collideN") { f |= flag::EDGE_N; }
-        if matches!(k, "WallW" | "WallNW" | "WindowW" | "windowW" | "collideW") { f |= flag::EDGE_W; }
+        if matches!(k, "WallN" | "WallNW" | "WindowN" | "windowN" | "collideN" | "HoppableN") { f |= flag::EDGE_N; }
+        if matches!(k, "WindowN" | "windowN") { f |= flag::WINDOW_N; }
+        if matches!(k, "WindowW" | "windowW") { f |= flag::WINDOW_W; }
+        if k == "HoppableN" { f |= flag::HOP_N; }
+        if k == "HoppableW" { f |= flag::HOP_W; }
+        if matches!(k, "WallW" | "WallNW" | "WindowW" | "windowW" | "collideW" | "HoppableW") { f |= flag::EDGE_W; }
     }
     f
 }
@@ -186,6 +196,17 @@ impl World {
         }
     }
 
+    /// True when the step `from -> to` is blocked only by a window or hoppable fence on the crossed edge, so a
+    /// zombie (or player) can climb it. Windows are treated as always climbable: their open/broken state is not modelled.
+    pub fn hurdle(&mut self, from: (i32, i32), to: (i32, i32), z: usize) -> bool {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        if dx.abs() + dy.abs() != 1 { return false; }
+        let t = self.flags(to.0, to.1, z);
+        if t & flag::SOLID != 0 || !self.has_floor(to.0, to.1, z) { return false; }
+        // The crossed edge belongs to the target square when moving east/south, to the source when moving west/north.
+        let (edge_sq, n, w) = if dx > 0 || dy > 0 { (t, dy > 0, dx > 0) } else { (self.flags(from.0, from.1, z), dy < 0, dx < 0) };
+        if n { edge_sq & (flag::WINDOW_N | flag::HOP_N) != 0 } else if w { edge_sq & (flag::WINDOW_W | flag::HOP_W) != 0 } else { false }
+    }
 
     /// Make sure the chunk holding tile (x, y) is decoded. Returns false if no map data there.
     pub fn ensure(&mut self, x: i32, y: i32) -> bool {
