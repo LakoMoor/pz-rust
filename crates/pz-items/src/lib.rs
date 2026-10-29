@@ -68,7 +68,16 @@ pub struct Inventory { capacity: f32, stacks: Vec<(String, u32)>, weight: f32 }
 #[derive(Debug, PartialEq)]
 pub enum AddError { UnknownItem, TooHeavy }
 
+/// IsoGameCharacter.maxWeightBase: a character carries 8 weight units before strength bonuses.
+pub const BASE_MAX_WEIGHT: f32 = 8.0;
+
 impl Inventory {
+    /// A player's main inventory (capacity 8).
+    pub fn player() -> Self { Self::new(BASE_MAX_WEIGHT) }
+
+    /// IsoGameCharacter.isOverEncumbered: carried weight / max weight > 1.
+    pub fn over_encumbered(&self) -> bool { self.weight / self.capacity > 1.0 }
+
     pub fn new(capacity: f32) -> Self { Self { capacity, stacks: Vec::new(), weight: 0.0 } }
     pub fn weight(&self) -> f32 { self.weight }
     pub fn count(&self, id: &str) -> u32 { self.stacks.iter().find(|(i, _)| i == id).map_or(0, |s| s.1) }

@@ -31,3 +31,12 @@ fn baseball_bat_stats() {
     assert_eq!((bat.min_damage, bat.max_damage, bat.max_range), (0.8, 1.1, 1.25));
     assert_eq!(bat.swing_time, 3.0);
 }
+
+#[test]
+fn player_capacity_is_eight() {
+    let Some(db) = db() else { return };
+    let mut inv = Inventory::player();
+    inv.add(&db, "Base.SpadeHead", 8).unwrap();
+    assert!(!inv.over_encumbered(), "exactly at capacity is not over");
+    assert_eq!(inv.add(&db, "Base.SpadeHead", 1), Err(AddError::TooHeavy));
+}
