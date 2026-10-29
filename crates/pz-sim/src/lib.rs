@@ -160,6 +160,30 @@ fn slide(pos: &mut [f32; 2], z: usize, dir: [f32; 2], speed: f32, world: &mut Wo
 const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keeps the sim deterministic
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
+
+/// Conditions that shrink how far a zombie sees (IsoZombie.updateVisionRadius).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Weather {
+    /// 0..1
+    pub rain: f32,
+    /// 0..1
+    pub fog: f32,
+    /// Light level at the target's square, 0 (pitch dark) .. 1 (full light).
+    pub light: f32,
+}
+
+impl Default for Weather {
+    fn default() -> Self { Weather { rain: 0.0, fog: 0.0, light: 1.0 } }
+}
+
+impl Weather {
+    /// Vision radius in squares: 20 minus the worst of the darkness and rain+fog penalties, clamped to 10..20.
+    pub fn vision_radius(&self) -> f32 {
+        let dark = (1.0 - self.light) * 5.0;
+        let wet = self.rain * 2.5 + self.fog * 7.0;
+        (ZOMBIE_SIGHT - dark.max(wet)).clamp(10.0, 20.0)
+    }
+}
 const ATTACK_RANGE: f32 = 0.9;
 const ATTACK_COOLDOWN: u32 = 45; // ticks (1.5 s)
 
@@ -240,6 +264,10 @@ impl Zombie {
     }
 
     pub fn tick(&mut self, target: &mut Player, world: &mut World) {
+        self.tick_in(target, world, &Weather::default());
+    }
+
+    pub fn tick_in(&mut self, target: &mut Player, world: &mut World, weather: &Weather) {
         self.cooldown = self.cooldown.saturating_sub(1);
         if self.on_floor {
             // ZombieOnGroundState: lie there until the reanimate timer runs out, then get up.
@@ -251,7 +279,7 @@ impl Zombie {
         if target.z != self.z { self.idle(world); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if dist > ZOMBIE_SIGHT { self.idle(world); return; }
+        if dist > weather.vision_radius() { self.idle(world); return; }
         if dist < ATTACK_RANGE {
             if self.cooldown == 0 {
                 let side = side_of(target.facing, [-d[0], -d[1]]);
