@@ -20,6 +20,8 @@ pub struct ItemDef {
     pub push_back_mod: f32,
     /// `Categories` contains `base:smallblade` (such weapons never stagger zombies).
     pub small_blade: bool,
+    /// `Tags = base:a;base:b`
+    pub tags: Vec<String>,
 }
 
 #[derive(Default)]
@@ -42,6 +44,7 @@ fn def(module: &str, b: &Block) -> ItemDef {
         crit_chance: num(b, "CriticalChance"),
         crit_dmg_multiplier: num(b, "CritDmgMultiplier"),
         push_back_mod: b.prop("PushBackMod").and_then(|v| v.parse().ok()).unwrap_or(1.0),
+        tags: b.prop("Tags").map(|t| t.split(";").map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
         small_blade: b.prop("Categories").is_some_and(|c| c.contains("smallblade")),
     }
 }
@@ -66,12 +69,19 @@ impl ItemDb {
         }
         Ok(db)
     }
+    /// Ids of all items carrying `tag` (sorted, for deterministic matching).
+    pub fn with_tag(&self, tag: &str) -> Vec<&str> {
+        let mut v: Vec<&str> = self.items.values().filter(|d| d.tags.iter().any(|t| t == tag)).map(|d| d.id.as_str()).collect();
+        v.sort_unstable();
+        v
+    }
     pub fn get(&self, id: &str) -> Option<&ItemDef> { self.items.get(id) }
     pub fn len(&self) -> usize { self.items.len() }
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 }
 
 /// A container with a weight capacity (PZ's default player capacity is 8 before strength bonuses).
+#[derive(Clone)]
 pub struct Inventory { capacity: f32, stacks: Vec<(String, u32)>, weight: f32 }
 
 #[derive(Debug, PartialEq)]
