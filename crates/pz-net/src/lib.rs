@@ -4,6 +4,8 @@ use pz_sim::{Input, Player, Zombie};
 use pz_world::World;
 use std::collections::BTreeMap;
 
+pub mod udp;
+
 pub type ClientId = u32;
 
 #[derive(Debug, Clone, PartialEq)]
