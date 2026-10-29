@@ -322,6 +322,14 @@ fn main() {
     let scene = make_scene(&args);
     let center = player_cam(&scene.player);
     let zoom = args.zoom;
-    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon: Weapon::FISTS };
+    // Wield a baseball bat when the item scripts are available (stats come straight from the game's data).
+    let weapon = pz_items::ItemDb::load(&args.pz.join("media").join("scripts")).ok()
+        .and_then(|db| db.get("Base.BaseballBat").map(|b| Weapon {
+            damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range,
+            cooldown_ticks: (b.swing_time * 10.0) as u32,
+        }))
+        .unwrap_or(Weapon::FISTS);
+    log::info!("weapon: {weapon:?}");
+    let mut app = App { args, scene, gfx: None, center, zoom, keys: Default::default(), last: Instant::now(), acc: 0.0, weapon };
     EventLoop::new().unwrap().run_app(&mut app).unwrap();
 }

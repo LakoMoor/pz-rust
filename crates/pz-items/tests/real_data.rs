@@ -23,3 +23,11 @@ fn database_and_inventory_weights() {
     assert_eq!(inv.remove(&db, "Base.SpadeHead", 5), 2);
     assert!(inv.weight().abs() < 1e-4);
 }
+
+#[test]
+fn baseball_bat_stats() {
+    let Some(db) = db() else { return };
+    let bat = db.get("Base.BaseballBat").expect("BaseballBat");
+    assert_eq!((bat.min_damage, bat.max_damage, bat.max_range), (0.8, 1.1, 1.25));
+    assert_eq!(bat.swing_time, 3.0);
+}

@@ -1530,6 +1530,7 @@ dependencies = [
  "png",
  "pollster",
  "pz-formats",
+ "pz-items",
  "pz-sim",
  "pz-world",
  "wgpu",

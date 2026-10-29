@@ -10,10 +10,17 @@ pub struct ItemDef {
     pub item_type: String,
     pub weight: f32,
     pub icon: String,
+    /// Melee stats (0 for non-weapons).
+    pub min_damage: f32,
+    pub max_damage: f32,
+    pub max_range: f32,
+    pub swing_time: f32,
 }
 
 #[derive(Default)]
 pub struct ItemDb { items: HashMap<String, ItemDef> }
+
+fn num(b: &Block, k: &str) -> f32 { b.prop(k).and_then(|v| v.parse().ok()).unwrap_or(0.0) }
 
 fn def(module: &str, b: &Block) -> ItemDef {
     ItemDef {
@@ -23,6 +30,10 @@ fn def(module: &str, b: &Block) -> ItemDef {
         // PZ's default item weight is 1.
         weight: b.prop("Weight").and_then(|w| w.parse().ok()).unwrap_or(1.0),
         icon: b.prop("Icon").unwrap_or("").to_string(),
+        min_damage: num(b, "MinDamage"),
+        max_damage: num(b, "MaxDamage"),
+        max_range: num(b, "MaxRange"),
+        swing_time: num(b, "Swingtime"),
     }
 }
 
