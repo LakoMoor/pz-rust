@@ -12,12 +12,14 @@ Crates: `pz-formats` (pack / tiles / lotheader / lotpack readers), `pz-world` (l
 `pz-scripts` (parser for the game's item/recipe/entity script files: 1,004 files, 5,105 items),
 `pz-items` (typed item database + weight-limited inventory),
 `pz-net` (binary protocol + authoritative server core; UDP transport over std::net),
+`pz-server` (headless dedicated server binary),
 `pz-sim` (fixed 30 Hz tick, player, zombies), `pz-viewer` (wgpu + winit isometric renderer).
 
 ```
 set PZ_DIR=E:\Games\steamapps\common\ProjectZomboid
 cargo run --release -p pz-viewer -- --at 12670,1660          # WASD/Shift/wheel
 cargo run --release -p pz-viewer -- --shot out.png --at 12670,1660 --zoom 0.8   # headless frame
+cargo run --release -p pz-server -- --bind 0.0.0.0:16261      # headless UDP server, 30 Hz
 cargo test --release                                         # differential tests vs. your install
 ```
 
