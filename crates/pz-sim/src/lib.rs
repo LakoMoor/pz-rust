@@ -305,3 +305,13 @@ impl Zombie {
         if let Some((_, s)) = best { self.wander = Some(s.pos); self.z = self.z.min(s.z.max(self.z)); }
     }
 }
+
+/// IsoPlayer.calculateCritChance, melee branch (no moodles, default sandbox).
+/// `crit_chance` is the weapon's `CriticalChance`; `skill` is the matching weapon-skill level (0..10).
+pub fn melee_crit_chance(crit_chance: f32, two_handed_not_held_in_both: bool, charge_time: f32, skill: u32) -> i32 {
+    let mut c = crit_chance;
+    if two_handed_not_held_in_both { c -= c / 3.0; }
+    if charge_time < 2.0 { c -= c / 5.0; }
+    c += skill as f32 * 3.0;
+    c.clamp(10.0, 90.0) as i32
+}
