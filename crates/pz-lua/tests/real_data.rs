@@ -334,3 +334,40 @@ fn the_real_apply_bandage_action_wraps_a_wound_and_uses_up_the_bandage() {
     assert_eq!(inv.borrow().count("Base.Bandage"), 0, "bandage used up");
     assert!(after.pain() < before, "wrapped wound hurts less");
 }
+
+#[test]
+fn the_real_stitch_action_closes_a_deep_wound_and_leaves_pain() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let db = Arc::new(pz_items::ItemDb::load(&dir.parent().unwrap().join("scripts")).unwrap());
+    let inv = Rc::new(RefCell::new(pz_items::Inventory::player()));
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    {
+        let mut p = player.borrow_mut();
+        p.body.parts[7].deep_wound_time = 20.0;
+        p.body.parts[7].bleeding_time = 15.0;
+    }
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(player.clone()).unwrap();
+    rt.bind_inventory(db, inv).unwrap();
+    rt.add_lua_root(&dir.join("shared")).unwrap();
+    rt.lua.load("ISTimedActionQueue = { getTimedActionQueue = function() return { onCompleted = function() end, resetQueue = function() end } end }").exec().unwrap();
+    rt.run_file(&dir.join("shared/TimedActions/ISStitch.lua")).unwrap();
+    rt.lua.load(r#"
+        local p = getPlayer()
+        local needle = p:getInventory():AddItem("Base.SutureNeedle")
+        local part = p:getBodyDamage():getBodyPart(7)
+        action = ISStitch:new(p, p, needle, part, true)
+        action.adjustMaxTime = function(_, t) return t end
+        action:begin()
+    "#).exec().unwrap();
+    // A suture needle shortens the job: 150 ticks at doctor level 0.
+    for _ in 0..149 { rt.tick_actions(1.0).unwrap(); }
+    assert!(!player.borrow().body.parts[7].stitched, "still stitching");
+    for _ in 0..3 { rt.tick_actions(1.0).unwrap(); }
+    let part = player.borrow().body.parts[7];
+    assert!(part.stitched && part.deep_wound_time == 0.0 && part.bleeding_time == 0.0, "{part:?}");
+    // doctor level 0: stitch time (1/2) * [2, 5); needle halves the base pain to 10.
+    assert!((1.0..2.5).contains(&part.stitch_time), "{}", part.stitch_time);
+    assert_eq!(part.additional_pain, 10.0);
+}

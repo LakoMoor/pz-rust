@@ -111,6 +111,8 @@ function BodyPartType.FromIndex(i) return i end
 -- Health-panel / engine globals used by the first-aid actions.
 function isClient() return false end
 function isServer() return false end
+function isMultiplayer() return false end
+function ZombRand(n) return math.random(0, math.floor(n) - 1) end
 function addXp() end
 function syncBodyPart() end
 function syncPlayerStats() end
@@ -203,6 +205,7 @@ fn item_table(lua: &Lua, def: &ItemDef) -> Result<mlua::Table> {
     getter("getBandagePower", mlua::Value::Number(def.bandage_power as f64))?;
     getter("isAlcoholic", mlua::Value::Boolean(false))?;
     getter("isInfected", mlua::Value::Boolean(false))?;
+    getter("UseAndSync", mlua::Value::Nil)?;
     getter("setJobDelta", mlua::Value::Nil)?;
     getter("setJobType", mlua::Value::Nil)?;
     getter("getFullType", mlua::Value::String(lua.create_string(&id)?))?;
@@ -297,6 +300,12 @@ impl Runtime {
                          getBandageLife = function() return info.bandageLife end,
                          HasInjury = function() return info.bleeding or info.scratched or info.cut or info.bitten end,
                          isGetBandageXp = function() return true end,
+                         isGetStitchXp = function() return true end,
+                         setStitched = function(_, on) __setStitched(i, on) end,
+                         getAdditionalPain = function() return info.additionalPain end,
+                         setAdditionalPain = function(_, v) __setPartField(i, "additional_pain", v) end,
+                         setStitchTime = function(_, v) __setPartField(i, "stitch_time", v) end,
+                         setInfectedWound = function() end,
                          getBandageType = function() return nil end,
                          manipulatingUsername = function() return nil end,
                          setManipulatingUsername = function() end,
@@ -352,6 +361,7 @@ impl Runtime {
                 t.set("bandaged", b.bandaged)?;
                 t.set("pain", b.pain() as f64)?;
                 t.set("bleedingTime", b.bleeding_time as f64)?;
+                t.set("additionalPain", b.additional_pain as f64)?;
                 t.set("bandageLife", b.bandage_life as f64)?;
                 Ok(mlua::Value::Table(t))
             })?)?;
@@ -360,6 +370,27 @@ impl Runtime {
                 let mut pl = p.borrow_mut();
                 if i < pz_sim::body::PARTS {
                     if on { pl.body.apply_bandage(i, life as f32) } else { pl.body.remove_bandage(i) }
+                }
+                Ok(())
+            })?)?;
+            let p = player.clone();
+            lua.globals().set("__setStitched", lua.create_function(move |_, (i, on): (usize, bool)| {
+                let mut pl = p.borrow_mut();
+                if i < pz_sim::body::PARTS {
+                    // Pain and stitch time are set by the script afterwards through __setPartField.
+                    if on { pl.body.stitch(i, 0.0, 0.0) } else { pl.body.remove_stitches(i, 0.5, 0.5, 0.0) }
+                }
+                Ok(())
+            })?)?;
+            let p = player.clone();
+            lua.globals().set("__setPartField", lua.create_function(move |_, (i, field, v): (usize, String, f64)| {
+                let mut pl = p.borrow_mut();
+                if let Some(part) = pl.body.parts.get_mut(i) {
+                    match field.as_str() {
+                        "additional_pain" => part.additional_pain = v as f32,
+                        "stitch_time" => part.stitch_time = v as f32,
+                        _ => {}
+                    }
                 }
                 Ok(())
             })?)?;
