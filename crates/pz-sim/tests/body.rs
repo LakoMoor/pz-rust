@@ -139,3 +139,27 @@ fn pain_follows_the_wounds_and_eases_under_a_bandage() {
     b.apply_bandage(3, 10.0);
     assert!((b.parts[3].pain() - 20.0).abs() < 1e-4);
 }
+
+#[test]
+fn stitches_close_a_deep_wound_hurt_for_a_while_and_reopen_if_pulled_early() {
+    let mut b = Body::default();
+    b.parts[7].deep_wound_time = 20.0;
+    b.parts[7].bleeding_time = 15.0;
+    b.stitch(7, 3.0, 20.0);
+    let p = b.parts[7];
+    assert!(p.stitched && p.deep_wound_time == 0.0 && p.bleeding_time == 0.0);
+    // Stitch pain (35 - 3) plus the procedure's lingering 20.
+    assert!((p.pain() - 52.0).abs() < 1e-4);
+    // The lingering pain fades by 0.005 per tick; the stitch itself matures slowly.
+    for _ in 0..1000 { b.update(1.0); }
+    assert!((b.parts[7].additional_pain - 15.0).abs() < 0.01);
+    assert!(b.parts[7].stitch_time > 3.1);
+    // Pulling them out early (stitch time 3 < 40) reopens a deep wound that bleeds.
+    b.remove_stitches(7, 0.5, 0.5, 5.0);
+    assert!(!b.parts[7].stitched && b.parts[7].deep_wound_time > 0.0 && b.parts[7].bleeding_time > 0.0);
+    // Matured stitches (over 40) leave only a scratch.
+    let mut c = Body::default();
+    c.stitch(2, 45.0, 0.0);
+    c.remove_stitches(2, 0.0, 0.0, 0.0);
+    assert!(c.parts[2].scratch_time >= 2.0 && c.parts[2].deep_wound_time == 0.0);
+}

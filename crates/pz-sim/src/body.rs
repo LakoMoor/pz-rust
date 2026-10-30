@@ -23,11 +23,15 @@ pub struct Part {
     pub bandaged: bool,
     pub bandage_life: f32,
     pub stitched: bool,
+    /// Progress of a stitched wound (0..=50): grows while it heals, hurts until 35.
+    pub stitch_time: f32,
+    /// Pain left over from a procedure (stitching), fading by 0.005 per tick.
+    pub additional_pain: f32,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false }
+        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0 }
     }
 }
 
@@ -41,8 +45,11 @@ impl Part {
         if self.cut_time > 0.0 { r += self.cut_time * 2.5; }
         if self.bite_time > 0.0 { r += if self.bandaged { 30.0 } else { 50.0 }; }
         if self.deep_wound_time > 0.0 { r += self.deep_wound_time * 3.7; }
+        if self.stitch_time > 0.0 && self.stitch_time < 35.0 {
+            r += if self.bandaged { (35.0 - self.stitch_time) / 2.0 } else { 35.0 - self.stitch_time };
+        }
         if self.bandaged { r /= 1.5; }
-        r
+        r + self.additional_pain
     }
 
     fn reduce(&mut self, v: f32) { self.health = (self.health - v).clamp(0.0, 100.0); }
@@ -112,6 +119,11 @@ impl Body {
                 if !bandaged && p.deep_wound_time < 3.0 { p.deep_wound_time = 3.0; }
                 if p.deep_wound_time < 0.0 { p.deep_wound_time = 0.0; }
             }
+            if p.stitch_time > 0.0 && p.stitch_time < 50.0 {
+                if bandaged { p.stitch_time += (4.0e-4 + 1.0e-4) * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.stitch_time += 2.0e-4 * mult; }
+                if p.stitch_time > 50.0 { p.stitch_time = 50.0; }
+            }
+            if p.additional_pain > 0.0 { p.additional_pain = (p.additional_pain - 0.005 * mult).max(0.0); }
             if p.bandage_life < 0.0 { p.bandage_life = 0.0; }
         }
         self.reduce_general_health(general);
@@ -168,4 +180,35 @@ impl Body {
 
     /// `BodyPart.isBandageDirty`: a worn-out bandage is still on but no longer helps with infection.
     pub fn bandage_is_dirty(&self, part: usize) -> bool { self.parts[part].bandaged && self.parts[part].bandage_life <= 0.0 }
+}
+
+impl Body {
+    /// `ISStitch:complete` -> `BodyPart.setStitched(true)`: closes a deep wound and stops its bleeding. `stitch_time`
+    /// is `((1 + doctor) / 2) * ZombRandFloat(2, 5)` and `end_pain` the procedure's pain (`basePain - doctor`).
+    pub fn stitch(&mut self, part: usize, stitch_time: f32, end_pain: f32) {
+        let p = &mut self.parts[part];
+        p.bleeding_time = 0.0;
+        p.deep_wound_time = 0.0;
+        p.stitched = true;
+        p.stitch_time = stitch_time;
+        p.additional_pain += end_pain.max(0.0);
+    }
+
+    /// `setStitched(false)` on a stitched part (removing the stitches): early removal reopens the wound, later
+    /// removal only leaves a scratch. `r1`, `r2` are uniform [0,1) samples for the two `Rand.Next` calls.
+    pub fn remove_stitches(&mut self, part: usize, r1: f32, r2: f32, end_pain: f32) {
+        let p = &mut self.parts[part];
+        if p.stitched {
+            let t = p.stitch_time;
+            if t < 40.0 {
+                p.deep_wound_time = 10.0 + r1 * (t - 10.0);
+                p.bleeding_time = 10.0 + r2 * (t - 10.0);
+            } else {
+                p.scratch_time = 2.0 + r1 * (t - 42.0);
+            }
+            p.stitch_time = 0.0;
+        }
+        p.stitched = false;
+        p.additional_pain += end_pain.max(0.0);
+    }
 }
