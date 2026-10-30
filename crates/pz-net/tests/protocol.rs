@@ -200,3 +200,15 @@ fn players_get_thirsty_over_game_time_and_runners_faster() {
     assert!(idle.thirst > 0.0 && idle.hunger > 0.0);
     assert!(runner.thirst > idle.thirst, "running makes you thirstier: {} vs {}", runner.thirst, idle.thirst);
 }
+
+#[test]
+fn the_power_grid_fails_after_the_sandbox_shutoff_day() {
+    let mut s = server();
+    assert!(s.power_on());
+    s.world_hours = 14.0 * 24.0;
+    assert!(s.power_on(), "still on during day 14");
+    s.world_hours = 14.0 * 24.0 + 1.0;
+    assert!(!s.power_on());
+    s.elec_shut_days = 30;
+    assert!(s.power_on());
+}

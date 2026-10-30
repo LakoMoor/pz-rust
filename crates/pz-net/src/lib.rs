@@ -141,6 +141,8 @@ pub struct Server {
     pub world_hours: f32,
     /// Sandbox `lore.mortality` (1-7): how fast a bite kills. The game's default is 5 (2-3 days).
     pub mortality: u8,
+    /// `ElecShutModifier`: the grid works until this many world days have passed (`doesPowerGridExist`).
+    pub elec_shut_days: i32,
     /// Calendar and climate driving `clock` (dawn, dusk, daily fog); the game starts on 1993-07-09, like the original.
     pub climate: pz_sim::climate::Climate,
 }
@@ -149,7 +151,7 @@ impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
         let mut clock = GameClock::default();
         let climate = new_climate(&mut clock);
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, world_hours: 0.0, mortality: 5, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, world_hours: 0.0, mortality: 5, elec_shut_days: 14, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
     /// Replace the clock and climate (e.g. from command-line options).
@@ -198,20 +200,24 @@ impl Server {
         }
     }
 
+    /// Whether the power grid still works (`SandboxOptions.doesPowerGridExist`).
+    pub fn power_on(&self) -> bool { (self.world_hours / 24.0) as f64 <= self.elec_shut_days as f64 }
+
     pub fn tick(&mut self) -> ServerMsg {
         for (id, p) in self.players.iter_mut() {
             p.tick(self.inputs.get(id).copied().unwrap_or_default(), &mut self.world);
         }
         self.clock.tick();
         self.world_hours += 24.0 / (self.clock.day_seconds * pz_sim::TICK_HZ);
-        // Weather: players inside a room feel the indoor air (grid power is not modelled, so no heating to 22).
+        // Weather: players inside a room feel the indoor air (the grid holds rooms at 22 while it lasts).
         let air = self.climate.temperature(&self.clock);
         let air_wind = self.climate.wind_chill_temperature(&self.clock);
         let humidity = self.climate.humidity(&self.clock);
+        let power = self.power_on();
         for (id, p) in self.players.iter_mut() {
             let (sx, sy) = pz_sim::square_of(p.pos);
             let indoors = self.world.ensure(sx, sy) && self.world.column(sx, sy, p.z as usize).is_some_and(|c| c.room != -1);
-            let (air, air_wind) = if indoors { let t = self.climate.indoor_temperature(&self.clock, p.z as i32, false); (t, t) } else { (air, air_wind) };
+            let (air, air_wind) = if indoors { let t = self.climate.indoor_temperature(&self.clock, p.z as i32, power); (t, t) } else { (air, air_wind) };
             // Deterministic stand-in for Rand.Next: hash of tick and player id.
             let h = (self.tick as u32).wrapping_mul(2654435761) ^ (*id as u32).wrapping_mul(40503);
             let input = self.inputs.get(id).copied().unwrap_or_default();
