@@ -2,6 +2,7 @@
 //!
 //! Almost every sound names an FMOD Studio *event* that lives inside the game's `.bank` files; this crate only
 //! knows which event a sound plays and with what settings. Decoding the banks and playing audio is separate work.
+pub mod fsb5;
 use pz_scripts::{find_all, parse, Block};
 use std::{collections::HashMap, path::Path};
 
