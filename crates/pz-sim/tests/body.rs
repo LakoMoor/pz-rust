@@ -221,3 +221,18 @@ fn open_deep_wounds_fester_far_sooner_than_clean_skin_and_the_infection_grows() 
     assert_eq!(b.parts[7].wound_infection_level, 10.0);
     assert_eq!(b.general_wound_infection_level(100.0), 100.0);
 }
+
+#[test]
+fn burns_hurt_bleed_and_heal_faster_under_a_bandage() {
+    let mut open = Body::default();
+    open.burn(6, 40.0, 0.0); // torso: bleeds 40 * 0.3 * 0.5 = 6
+    assert!((open.parts[6].bleeding_time - 6.0).abs() < 1e-4);
+    assert_eq!(open.parts[6].pain(), 40.0);
+    let mut wrapped = open.clone();
+    wrapped.apply_bandage(6, 100.0);
+    for _ in 0..1000 { open.update(1.0); wrapped.update(1.0); }
+    assert!(open.parts[6].health < 100.0, "an open burn keeps injuring the skin");
+    assert_eq!(wrapped.parts[6].health, 100.0);
+    let (a, b) = (40.0 - open.parts[6].burn_time, 40.0 - wrapped.parts[6].burn_time);
+    assert!(b > 10.0 * a, "bandaged burns heal ~20x faster: {a} vs {b}");
+}

@@ -35,11 +35,13 @@ pub struct Part {
     /// A festering wound (`isInfectedWound`) and how far it has progressed (0..=10).
     pub infected_wound: bool,
     pub wound_infection_level: f32,
+    /// Burn: time left to heal.
+    pub burn_time: f32,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0, infected_wound: false, wound_infection_level: 0.0 }
+        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0, infected_wound: false, wound_infection_level: 0.0, burn_time: 0.0 }
     }
 }
 
@@ -56,6 +58,7 @@ impl Part {
         if self.stitch_time > 0.0 && self.stitch_time < 35.0 {
             r += if self.bandaged { (35.0 - self.stitch_time) / 2.0 } else { 35.0 - self.stitch_time };
         }
+        if self.burn_time > 0.0 { r += self.burn_time; }
         if self.fracture_time > 0.0 { r += if self.splint_factor > 0.0 { self.fracture_time / 2.0 } else { self.fracture_time }; }
         if self.bandaged { r /= 1.5; }
         if self.wound_infection_level > 0.0 { r += self.wound_infection_level; }
@@ -101,6 +104,7 @@ impl Body {
             if p.cut_time > 0.0 && !bandaged { p.reduce(1.875 * s); }
             if p.bite_time > 0.0 && !bandaged { p.reduce(2.1875 * s); }
             if p.fracture_time > 0.0 && !p.splint { p.reduce(3.125 * s); }
+            if p.burn_time > 0.0 && !bandaged { p.reduce(3.75 * s); }
             if p.bleeding_time > 0.0 && !bandaged { general += 0.2857143 * s * (p.bleeding_time / 10.0); }
             if p.bite_time > 0.0 {
                 if bandaged {
@@ -122,6 +126,7 @@ impl Body {
                 if p.scratch_time > 0.0 { chance -= 20_000; }
                 if p.cut_time > 0.0 { chance -= 25_000; }
                 if p.deep_wound_time > 0.0 { chance -= 30_000; }
+                if p.burn_time > 0.0 { chance -= 23_000; }
                 let chance = chance.max(5_000) as u32;
                 // xorshift32 stands in for Rand.Next(chance) == 0 once per tick.
                 self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
@@ -145,6 +150,10 @@ impl Body {
                 // An unbandaged deep wound never closes on its own.
                 if !bandaged && p.deep_wound_time < 3.0 { p.deep_wound_time = 3.0; }
                 if p.deep_wound_time < 0.0 { p.deep_wound_time = 0.0; }
+            }
+            if p.burn_time > 0.0 {
+                if bandaged { p.burn_time -= 1.0e-4 * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.burn_time -= 5.0e-6 * mult; }
+                if p.burn_time < 0.0 { p.burn_time = 0.0; }
             }
             if p.fracture_time > 0.0 {
                 p.fracture_time -= if p.splint_factor > 0.0 { 5.0e-5 * mult * p.splint_factor } else { 5.0e-6 * mult };
@@ -275,4 +284,14 @@ impl Body {
 impl Body {
     /// A body whose random wound events follow a given stream (so independent characters differ).
     pub fn with_seed(seed: u32) -> Self { Body { rng: seed | 1, ..Body::default() } }
+}
+
+impl Body {
+    /// Burn a part (`setBurnTime`, e.g. 30-50 from random trauma). The burn also bleeds for 30-60% of its
+    /// time, as `generateBleeding` adds; `r` is a uniform [0,1) sample for that range.
+    pub fn burn(&mut self, part: usize, time: f32, r: f32) {
+        let p = &mut self.parts[part];
+        p.burn_time = time;
+        p.bleeding_time += time * (0.3 + r * 0.3) * BLEEDING_TIME_MODIFIER[part];
+    }
 }
