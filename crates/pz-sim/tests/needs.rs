@@ -86,3 +86,16 @@ fn fatigue_builds_while_awake_and_the_tired_moodle_follows() {
     assert_eq!(tired(0.95, 100.0), 4);
     assert_eq!(tired(0.95, 0.0), 0);
 }
+
+#[test]
+fn eating_and_drinking_reduce_hunger_and_thirst_and_clamp_at_zero() {
+    let mut n = pz_sim::needs::Needs { hunger: 0.5, thirst: 0.4, ..Default::default() };
+    n.eat(-0.2, 0.5);
+    assert!((n.hunger - 0.4).abs() < 1e-6);
+    n.eat(-0.9, 1.0);
+    assert_eq!(n.hunger, 0.0);
+    n.drink(-0.1, 1.0);
+    assert!((n.thirst - 0.3).abs() < 1e-6);
+    n.drink(-1.0, 1.0);
+    assert_eq!(n.thirst, 0.0);
+}

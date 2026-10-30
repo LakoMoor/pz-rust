@@ -45,4 +45,15 @@ impl Needs {
         self.hunger = self.hunger.clamp(0.0, 1.0);
         self.thirst = self.thirst.clamp(0.0, 1.0);
     }
+
+    /// Eating a fraction of a food: `hunger_change` is the item's (negative) `HungerChange` scaled to 0..1 units
+    /// (script value / 100) times the portion eaten.
+    pub fn eat(&mut self, hunger_change: f32, portion: f32) {
+        self.hunger = (self.hunger + hunger_change * portion.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+    }
+
+    /// Drinking: `thirst_change` is the item's (negative) `ThirstChange` in 0..1 units times the portion drunk.
+    pub fn drink(&mut self, thirst_change: f32, portion: f32) {
+        self.thirst = (self.thirst + thirst_change * portion.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+    }
 }
