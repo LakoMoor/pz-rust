@@ -186,3 +186,38 @@ fn a_fracture_hurts_and_damages_until_splinted_which_also_heals_faster() {
     splinted.update(1.0);
     assert_eq!(splinted.parts[13].fracture_time, 0.0);
 }
+
+#[test]
+fn open_deep_wounds_fester_far_sooner_than_clean_skin_and_the_infection_grows() {
+    // A deep wound: base chance 40000 - 10000 (no bandage) - 30000 = 0 -> floored to 1 in 5000 per tick.
+    let infected_after = |setup: &dyn Fn(&mut Body), ticks: usize| {
+        let mut n = 0;
+        for seed in 0..40 {
+            let mut b = Body::with_seed(0x9E37_79B9u32.wrapping_mul(seed + 1));
+            setup(&mut b);
+            for _ in 0..ticks { b.update(1.0); }
+            if b.parts[7].infected_wound { n += 1; }
+        }
+        n
+    };
+    let deep = |b: &mut Body| b.parts[7].deep_wound_time = 20.0;
+    let bandaged_scratch = |b: &mut Body| { b.parts[7].scratch_time = 20.0; b.apply_bandage(7, 100.0); };
+    let healthy = |_: &mut Body| {};
+    assert!(infected_after(&deep, 30_000) >= 36, "deep wounds fester almost surely within 6 mean intervals");
+    assert_eq!(infected_after(&healthy, 30_000), 0, "unwounded skin never festers");
+    assert!(infected_after(&bandaged_scratch, 30_000) < infected_after(&deep, 30_000), "a clean bandaged scratch is safer");
+
+    // Progress: 1e-5 per tick, capped at 10, and it hurts and counts toward general infection.
+    let mut b = Body::default();
+    b.parts[7].infected_wound = true;
+    for _ in 0..100_000 { b.update(1.0); }
+    let level = b.parts[7].wound_infection_level;
+    assert!((level - 1.0).abs() < 0.05, "{level}");
+    assert!((b.parts[7].pain() - level).abs() < 1e-4);
+    assert!((b.general_wound_infection_level(1.0) - level * 10.0).abs() < 1e-3);
+    assert_eq!(b.general_wound_infection_level(0.0), 0.0);
+    b.parts[7].wound_infection_level = 99.0;
+    b.update(1.0);
+    assert_eq!(b.parts[7].wound_infection_level, 10.0);
+    assert_eq!(b.general_wound_infection_level(100.0), 100.0);
+}

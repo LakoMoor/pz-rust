@@ -32,11 +32,14 @@ pub struct Part {
     pub splint: bool,
     /// How well the splint is set (0 = none); speeds healing by that factor.
     pub splint_factor: f32,
+    /// A festering wound (`isInfectedWound`) and how far it has progressed (0..=10).
+    pub infected_wound: bool,
+    pub wound_infection_level: f32,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0 }
+        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0, infected_wound: false, wound_infection_level: 0.0 }
     }
 }
 
@@ -55,6 +58,7 @@ impl Part {
         }
         if self.fracture_time > 0.0 { r += if self.splint_factor > 0.0 { self.fracture_time / 2.0 } else { self.fracture_time }; }
         if self.bandaged { r /= 1.5; }
+        if self.wound_infection_level > 0.0 { r += self.wound_infection_level; }
         r + self.additional_pain
     }
 
@@ -62,9 +66,9 @@ impl Part {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Body { pub parts: [Part; PARTS] }
+pub struct Body { pub parts: [Part; PARTS], rng: u32 }
 
-impl Default for Body { fn default() -> Self { Body { parts: [Part::default(); PARTS] } } }
+impl Default for Body { fn default() -> Self { Body { parts: [Part::default(); PARTS], rng: 0x2545_F491 } } }
 
 impl Body {
     /// `BodyDamage.calculateOverallHealth` (without pill damage).
@@ -111,6 +115,22 @@ impl Body {
                 } else { p.bleeding_time -= 2.0e-5 * mult; }
                 if p.bleeding_time < 0.0 { p.bleeding_time = 0.0; }
             }
+            // A fresh wound may start to fester; a festering one worsens slowly and wears the bandage.
+            if !p.infected_wound && !(p.deep_wound_time <= 0.0 && p.scratch_time <= 0.0 && p.cut_time <= 0.0 && p.stitch_time <= 0.0) {
+                let mut chance: i32 = 40_000;
+                if !bandaged { chance -= 10_000; } else if p.bandage_life == 0.0 { chance -= 35_000; }
+                if p.scratch_time > 0.0 { chance -= 20_000; }
+                if p.cut_time > 0.0 { chance -= 25_000; }
+                if p.deep_wound_time > 0.0 { chance -= 30_000; }
+                let chance = chance.max(5_000) as u32;
+                // xorshift32 stands in for Rand.Next(chance) == 0 once per tick.
+                self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
+                if self.rng % chance == 0 { p.infected_wound = true; }
+            } else if p.infected_wound {
+                p.wound_infection_level += 1.0e-5 * mult;
+            }
+            if p.infected_wound && p.bandage_life > 0.0 { p.bandage_life -= 2.0e-4 * mult; }
+            if p.wound_infection_level > 10.0 { p.wound_infection_level = 10.0; }
             // Healing: wound timers run down faster under a bandage, which wears as it works.
             if p.scratch_time > 0.0 {
                 if bandaged { p.scratch_time -= 1.5e-4 * mult; p.bandage_life -= 8.0e-5 * mult; } else { p.scratch_time -= 1.0e-5 * mult; }
@@ -241,4 +261,18 @@ impl Body {
         p.splint = false;
         p.splint_factor = 0.0;
     }
+}
+
+impl Body {
+    /// `BodyDamage.getGeneralWoundInfectionLevel`: festering wounds summed, x10 x the sandbox factor, capped at 100.
+    pub fn general_wound_infection_level(&self, factor: f32) -> f32 {
+        if factor <= 0.0 { return 0.0; }
+        let total: f32 = self.parts.iter().filter(|p| p.infected_wound).map(|p| p.wound_infection_level).sum();
+        (total * 10.0 * factor).min(100.0)
+    }
+}
+
+impl Body {
+    /// A body whose random wound events follow a given stream (so independent characters differ).
+    pub fn with_seed(seed: u32) -> Self { Body { rng: seed | 1, ..Body::default() } }
 }
