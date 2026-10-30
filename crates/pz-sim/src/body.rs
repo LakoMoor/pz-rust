@@ -40,11 +40,16 @@ pub struct Part {
     pub wound_infection_level: f32,
     /// Burn: time left to heal.
     pub burn_time: f32,
+    /// Poultices: plantain speeds scratch/cut/deep-wound healing under a bandage, comfrey speeds bone healing,
+    /// garlic fights wound infection. Each is used up as it works (0..=100).
+    pub plantain_factor: f32,
+    pub comfrey_factor: f32,
+    pub garlic_factor: f32,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0, infected_wound: false, wound_infection_level: 0.0, burn_time: 0.0 }
+        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0, infected_wound: false, wound_infection_level: 0.0, burn_time: 0.0, plantain_factor: 0.0, comfrey_factor: 0.0, garlic_factor: 0.0 }
     }
 }
 
@@ -135,21 +140,37 @@ impl Body {
                 self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5;
                 if self.rng % chance == 0 { p.infected_wound = true; }
             } else if p.infected_wound {
-                p.wound_infection_level += 1.0e-5 * mult;
+                // Garlic reduces the infection instead of letting it grow.
+                if p.garlic_factor > 0.0 {
+                    p.wound_infection_level -= 2.0e-4 * mult;
+                    p.garlic_factor -= 8.0e-4 * mult;
+                } else {
+                    p.wound_infection_level += 1.0e-5 * mult;
+                }
+                if p.wound_infection_level < 0.0 { p.wound_infection_level = 0.0; }
             }
             if p.infected_wound && p.bandage_life > 0.0 { p.bandage_life -= 2.0e-4 * mult; }
             if p.wound_infection_level > 10.0 { p.wound_infection_level = 10.0; }
             // Healing: wound timers run down faster under a bandage, which wears as it works.
             if p.scratch_time > 0.0 {
-                if bandaged { p.scratch_time -= 1.5e-4 * mult; p.bandage_life -= 8.0e-5 * mult; } else { p.scratch_time -= 1.0e-5 * mult; }
+                if bandaged {
+                    p.scratch_time -= 1.5e-4 * mult; p.bandage_life -= 8.0e-5 * mult;
+                    if p.plantain_factor > 0.0 { p.scratch_time -= 1.0e-4 * mult; p.plantain_factor = (p.plantain_factor - 8.0e-4 * mult).max(0.0); }
+                } else { p.scratch_time -= 1.0e-5 * mult; }
                 if p.scratch_time < 0.0 { p.scratch_time = 0.0; p.bleeding_time = 0.0; }
             }
             if p.cut_time > 0.0 {
-                if bandaged { p.cut_time -= 5.0e-5 * mult; p.bandage_life -= 1.0e-5 * mult; } else { p.cut_time -= 1.0e-6 * mult; }
+                if bandaged {
+                    p.cut_time -= 5.0e-5 * mult; p.bandage_life -= 1.0e-5 * mult;
+                    if p.plantain_factor > 0.0 { p.cut_time -= 5.0e-5 * mult; p.plantain_factor = (p.plantain_factor - 8.0e-4 * mult).max(0.0); }
+                } else { p.cut_time -= 1.0e-6 * mult; }
                 if p.cut_time < 0.0 { p.cut_time = 0.0; p.bleeding_time = 0.0; }
             }
             if p.deep_wound_time > 0.0 {
-                if bandaged { p.deep_wound_time -= 2.0e-5 * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.deep_wound_time -= 2.0e-6 * mult; }
+                if bandaged {
+                    p.deep_wound_time -= 2.0e-5 * mult; p.bandage_life -= 1.0e-4 * mult;
+                    if p.plantain_factor > 0.0 { p.deep_wound_time -= 7.0e-6 * mult; p.plantain_factor = (p.plantain_factor - 8.0e-4 * mult).max(0.0); }
+                } else { p.deep_wound_time -= 2.0e-6 * mult; }
                 // An unbandaged deep wound never closes on its own.
                 if !bandaged && p.deep_wound_time < 3.0 { p.deep_wound_time = 3.0; }
                 if p.deep_wound_time < 0.0 { p.deep_wound_time = 0.0; }
@@ -160,7 +181,8 @@ impl Body {
             }
             if p.fracture_time > 0.0 {
                 p.fracture_time -= if p.splint_factor > 0.0 { 5.0e-5 * mult * p.splint_factor } else { 5.0e-6 * mult };
-                if p.fracture_time < 0.0 { p.fracture_time = 0.0; }
+                if p.comfrey_factor > 0.0 { p.fracture_time -= 5.0e-6 * mult; p.comfrey_factor = (p.comfrey_factor - 5.0e-4 * mult).max(0.0); }
+                if p.fracture_time < 0.0 { p.fracture_time = 0.0; p.comfrey_factor = 0.0; p.plantain_factor = 0.0; }
             }
             if p.stitch_time > 0.0 && p.stitch_time < 50.0 {
                 if bandaged { p.stitch_time += (4.0e-4 + 1.0e-4) * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.stitch_time += 2.0e-4 * mult; }
@@ -304,4 +326,11 @@ impl Body {
     pub fn pain_target(&self) -> f32 {
         self.parts.iter().zip(PAIN_MODIFIER).map(|(p, m)| p.pain() * m).sum()
     }
+}
+
+impl Body {
+    /// `setPlantainFactor` etc.: apply a poultice (strength clamped to 0..=100).
+    pub fn apply_plantain(&mut self, part: usize, v: f32) { self.parts[part].plantain_factor = v.clamp(0.0, 100.0); }
+    pub fn apply_comfrey(&mut self, part: usize, v: f32) { self.parts[part].comfrey_factor = v.clamp(0.0, 100.0); }
+    pub fn apply_garlic(&mut self, part: usize, v: f32) { self.parts[part].garlic_factor = v.clamp(0.0, 100.0); }
 }

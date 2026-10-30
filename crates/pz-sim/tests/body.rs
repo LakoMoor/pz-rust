@@ -236,3 +236,40 @@ fn burns_hurt_bleed_and_heal_faster_under_a_bandage() {
     let (a, b) = (40.0 - open.parts[6].burn_time, 40.0 - wrapped.parts[6].burn_time);
     assert!(b > 10.0 * a, "bandaged burns heal ~20x faster: {a} vs {b}");
 }
+
+#[test]
+fn poultices_speed_up_healing_and_are_used_up() {
+    // Plantain under a bandage: a scratch heals sooner, and the poultice wears off.
+    let mut plain = Body::default();
+    plain.scratch(6, 0.0, 0.0);
+    plain.apply_bandage(6, 100.0);
+    let mut poulticed = plain.clone();
+    poulticed.apply_plantain(6, 100.0);
+    for _ in 0..20_000 { plain.update(1.0); poulticed.update(1.0); }
+    assert!(poulticed.parts[6].scratch_time < plain.parts[6].scratch_time - 1.0, "{} vs {}", poulticed.parts[6].scratch_time, plain.parts[6].scratch_time);
+    assert!(poulticed.parts[6].plantain_factor < 100.0);
+    // Comfrey helps a broken bone heal faster.
+    let mut bone = Body::default();
+    bone.fracture(13, 60.0);
+    bone.apply_splint(13, 1.0);
+    let mut with_comfrey = bone.clone();
+    with_comfrey.apply_comfrey(13, 100.0);
+    for _ in 0..20_000 { bone.update(1.0); with_comfrey.update(1.0); }
+    assert!(with_comfrey.parts[13].fracture_time < bone.parts[13].fracture_time);
+    // Garlic turns infection growth into decline, until it runs out.
+    let mut inf = Body::default();
+    inf.parts[7].infected_wound = true;
+    inf.parts[7].wound_infection_level = 1.0;
+    inf.apply_garlic(7, 100.0);
+    for _ in 0..1000 { inf.update(1.0); }
+    assert!(inf.parts[7].wound_infection_level < 1.0, "garlic reduces infection: {}", inf.parts[7].wound_infection_level);
+    assert!(inf.parts[7].garlic_factor < 100.0);
+    let mut untreated = Body::default();
+    untreated.parts[7].infected_wound = true;
+    untreated.parts[7].wound_infection_level = 1.0;
+    for _ in 0..1000 { untreated.update(1.0); }
+    assert!(untreated.parts[7].wound_infection_level > 1.0);
+    // Strength is clamped.
+    inf.apply_garlic(7, 500.0);
+    assert_eq!(inf.parts[7].garlic_factor, 100.0);
+}
