@@ -264,7 +264,19 @@ impl Runtime {
             function chr:setPain(part, pain) self.__pain[part] = pain end
             function chr:getMoodles() return { getMoodleLevel = function(_, name) return self.__moodles[name] or 0 end } end
             local body = chr:getBodyDamage()
-            function body:getBodyPart(i) return { getPain = function() return chr.__pain[i] or 0 end } end
+            function body:getBodyPart(i)
+                local info = __bodyPart(i)
+                if not info then return nil end
+                return { getPain = function() return chr.__pain[i] or 0 end,
+                         getHealth = function() return info.health end,
+                         bleeding = function() return info.bleeding end,
+                         scratched = function() return info.scratched end,
+                         isCut = function() return info.cut end,
+                         bitten = function() return info.bitten end,
+                         bandaged = function() return info.bandaged end }
+            end
+            function body:getOverallBodyHealth() return __bodyOverall() end
+            function body:getNumPartsBleeding() return __bodyBleeding() end
             function chr:getTimedActionTimeModifier() return 1.0 end
             function chr:isAsleep() return false end
             function chr:isFarming() return self.__farming == true end
@@ -277,6 +289,26 @@ impl Runtime {
                 self.__actions = {}
             end
         "#).call::<()>(t.clone())?;
+        {
+            // Wound state of body part `i` (0-based), read live from the simulation.
+            let p = player.clone();
+            lua.globals().set("__bodyPart", lua.create_function(move |lua, i: usize| {
+                let pl = p.borrow();
+                let Some(b) = pl.body.parts.get(i) else { return Ok(mlua::Value::Nil) };
+                let t = lua.create_table()?;
+                t.set("health", b.health as f64)?;
+                t.set("bleeding", b.bleeding_time > 0.0)?;
+                t.set("scratched", b.scratch_time > 0.0)?;
+                t.set("cut", b.cut_time > 0.0)?;
+                t.set("bitten", b.bite_time > 0.0)?;
+                t.set("bandaged", b.bandaged)?;
+                Ok(mlua::Value::Table(t))
+            })?)?;
+            let p = player.clone();
+            lua.globals().set("__bodyOverall", lua.create_function(move |_, ()| Ok(p.borrow().body.overall_health() as f64))?)?;
+            let p = player.clone();
+            lua.globals().set("__bodyBleeding", lua.create_function(move |_, ()| Ok(p.borrow().body.num_bleeding() as i64))?)?;
+        }
         let start: mlua::Function = lua.globals().get("__startAction")?;
         let tt0 = t.clone();
         t.set("StartAction", lua.create_function(move |_, (_this, act): (mlua::Value, mlua::Value)| start.call::<()>((tt0.clone(), act)))?)?;

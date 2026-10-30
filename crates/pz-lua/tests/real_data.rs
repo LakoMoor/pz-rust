@@ -267,3 +267,22 @@ fn the_real_adjust_max_time_reacts_to_moodles_and_pain() {
     let one: f64 = rt.lua.load("return ISBaseTimedAction:new(getPlayer()):adjustMaxTime(1)").eval().unwrap();
     assert_eq!(one, 1.0);
 }
+
+#[test]
+fn scripts_read_wounds_from_the_simulated_body() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    rt.bind_player(player.clone()).unwrap();
+    let q = |code: &str| -> (f64, i64, bool, bool) {
+        rt.lua.load(format!("local b = getPlayer():getBodyDamage(); {code}")).eval().unwrap()
+    };
+    assert_eq!(q("return b:getOverallBodyHealth(), b:getNumPartsBleeding(), b:getBodyPart(8):bleeding(), b:getBodyPart(8):scratched()"), (100.0, 0, false, false));
+    player.borrow_mut().body.scratch(8, 0.5, 0.5);
+    player.borrow_mut().body.parts[8].health = 50.0;
+    let (overall, bleeding, head_bleeds, head_scratched) = q("return b:getOverallBodyHealth(), b:getNumPartsBleeding(), b:getBodyPart(8):bleeding(), b:getBodyPart(8):scratched()");
+    assert!((overall - 70.0).abs() < 1e-3, "head 50% -> 30 damage, got {overall}");
+    assert_eq!((bleeding, head_bleeds, head_scratched), (1, true, true));
+    let none: bool = rt.lua.load("return getPlayer():getBodyDamage():getBodyPart(99) == nil").eval().unwrap();
+    assert!(none);
+}
