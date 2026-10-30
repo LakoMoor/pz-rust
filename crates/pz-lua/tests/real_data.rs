@@ -127,3 +127,22 @@ fn scripts_query_squares_of_the_real_map() {
     let nowhere: bool = rt.lua.load("return getCell():getGridSquare(-5000, -5000, 0) == nil").eval().unwrap();
     assert!(nowhere);
 }
+
+#[test]
+fn a_script_can_open_and_close_a_door_in_the_live_world() {
+    use std::{cell::RefCell, rc::Rc};
+    use pz_world::flag;
+    let Some(dir) = lua_dir() else { return };
+    let media = dir.parent().unwrap().to_path_buf();
+    let mut w = pz_world::World::new(media.join("maps").join("Muldraugh, KY"));
+    w.load_tile_flags(&media);
+    let door = (12600..12700).flat_map(|x| (1600..1700).map(move |y| (x, y))).find(|&(x, y)| w.flags(x, y, 0) & flag::DOOR_W != 0).expect("a door");
+    let world = Rc::new(RefCell::new(w));
+    let rt = Runtime::new().unwrap();
+    rt.bind_world(world.clone()).unwrap();
+    let (x, y) = door;
+    let (a, b, c): (bool, bool, bool) = rt.lua.load(format!(
+        "local s = getCell():getGridSquare({x}, {y}, 0); local o = s:toggleDoor(); local o2 = getCell():getGridSquare({x}, {y}, 0):isDoorOpen(); s:toggleDoor(); return o, o2, getCell():getGridSquare({x}, {y}, 0):isDoorOpen()")).eval().unwrap();
+    assert_eq!((a, b, c), (true, true, false));
+    assert!(!world.borrow().door_open(x, y, 0));
+}

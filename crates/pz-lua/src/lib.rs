@@ -142,6 +142,7 @@ impl Runtime {
         use pz_world::flag as f;
         let lua = &self.lua;
         let cell = lua.create_table()?;
+        let world2 = world.clone();
         cell.set("getGridSquare", lua.create_function(move |lua, (_this, x, y, z): (mlua::Value, i32, i32, i32)| {
             let mut w = world.borrow_mut();
             if z < 0 || !w.ensure(x, y) { return Ok(mlua::Value::Nil); }
@@ -157,6 +158,9 @@ impl Runtime {
                               ("isDoor", door), ("isWindow", window), ("isDoorOpen", open), ("hasFloor", floor)] {
                 sq.set(name, lua.create_function(move |_, _: mlua::MultiValue| Ok(v))?)?;
             }
+            // Interacting changes the live world (the same toggle the player's E key performs).
+            let w2 = world2.clone();
+            sq.set("toggleDoor", lua.create_function(move |_, _: mlua::MultiValue| Ok(w2.borrow_mut().toggle_door(x, y, z as usize)))?)?;
             Ok(mlua::Value::Table(sq))
         })?)?;
         let c2 = cell.clone();
