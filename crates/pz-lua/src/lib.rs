@@ -401,6 +401,8 @@ impl Runtime {
                 Ok(match name.as_str() {
                     "INJURED" => pz_sim::moodles::injured(h) as i64,
                     "BLEEDING" => pz_sim::moodles::bleeding(&pl.body, h) as i64,
+                    "HUNGRY" => pz_sim::moodles::hungry(pl.needs.hunger, h) as i64,
+                    "THIRST" => pz_sim::moodles::thirst(pl.needs.thirst) as i64,
                     "PAIN" => pz_sim::moodles::pain(pl.pain_stat, h) as i64,
                     "SICK" => pz_sim::moodles::sick(pl.infection_pct, 0.0, h) as i64,
                     _ => 0,

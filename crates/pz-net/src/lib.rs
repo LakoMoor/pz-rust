@@ -207,6 +207,9 @@ impl Server {
         for (id, p) in self.players.iter_mut() {
             // Deterministic stand-in for Rand.Next: hash of tick and player id.
             let h = (self.tick as u32).wrapping_mul(2654435761) ^ (*id as u32).wrapping_mul(40503);
+            let input = self.inputs.get(id).copied().unwrap_or_default();
+            let moving = input.dir[0] != 0.0 || input.dir[1] != 0.0;
+            p.tick_needs(30.0 / (self.clock.day_seconds / 60.0), input.run && moving);
             p.tick_infection(self.world_hours, self.mortality, (h >> 8) as f32 / (1u32 << 24) as f32);
         }
         self.climate.advance(&mut self.clock);

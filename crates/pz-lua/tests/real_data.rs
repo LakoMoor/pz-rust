@@ -405,3 +405,26 @@ fn the_sick_moodle_follows_the_infection_for_scripts() {
     player.borrow_mut().infection_pct = 60.0;
     assert_eq!(sick(&rt), 2);
 }
+
+#[test]
+fn rust_need_rates_match_the_games_defines_lua() {
+    let Some(dir) = lua_dir() else { return };
+    let rt = Runtime::new().unwrap();
+    rt.run_file(&dir.join("shared/defines.lua")).unwrap();
+    let g = |k: &str| -> f64 { rt.lua.load(format!("return ZomboidGlobals.{k}")).eval().unwrap() };
+    assert!((g("HungerIncrease") - pz_sim::needs::HUNGER_INCREASE as f64).abs() < 1e-12);
+    assert!((g("HungerIncreaseWhenExercise") - pz_sim::needs::HUNGER_INCREASE_EXERCISE as f64).abs() < 1e-12);
+    assert!((g("ThirstIncrease") - pz_sim::needs::THIRST_INCREASE as f64).abs() < 1e-12);
+    assert!((g("ThirstSleepingIncrease") - pz_sim::needs::THIRST_SLEEPING_INCREASE as f64).abs() < 1e-12);
+}
+
+#[test]
+fn scripts_see_hungry_and_thirst_moodles() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    rt.bind_player(player.clone()).unwrap();
+    player.borrow_mut().needs = pz_sim::needs::Needs { hunger: 0.5, thirst: 0.9 };
+    let (h, t): (i64, i64) = rt.lua.load("local m = getPlayer():getMoodles(); return m:getMoodleLevel(MoodleType.HUNGRY), m:getMoodleLevel(MoodleType.THIRST)").eval().unwrap();
+    assert_eq!((h, t), (3, 4));
+}

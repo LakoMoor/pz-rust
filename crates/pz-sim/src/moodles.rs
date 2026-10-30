@@ -32,3 +32,11 @@ pub fn sick(apparent_infection_pct: f32, sickness: f32, overall_health: f32) -> 
 pub fn pain(pain_stat: f32, overall_health: f32) -> u8 {
     if overall_health == 0.0 { 0 } else { ladder(pain_stat, [10.0, 20.0, 50.0, 75.0]) }
 }
+
+/// `MoodleType.HUNGRY`: from the hunger stat, thresholds 0.15 / 0.25 / 0.45 / 0.7.
+pub fn hungry(hunger: f32, overall_health: f32) -> u8 {
+    if overall_health == 0.0 { 0 } else { ladder(hunger, [0.15, 0.25, 0.45, 0.7]) }
+}
+
+/// `MoodleType.THIRST`: from the thirst stat, thresholds 0.12 / 0.25 / 0.7 / 0.84.
+pub fn thirst(thirst: f32) -> u8 { ladder(thirst, [0.12, 0.25, 0.7, 0.84]) }

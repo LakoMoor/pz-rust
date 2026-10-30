@@ -7,6 +7,7 @@ pub mod thunder;
 pub mod infection;
 pub mod body;
 pub mod moodles;
+pub mod needs;
 pub mod noise2d;
 pub mod climate;
 pub mod jrandom;
@@ -42,6 +43,7 @@ pub struct Player {
     pub infection_pct: f32,
     /// `PAIN` stat: rises toward the body's pain slowly (1/500 of the gap per tick) and drops at once when it eases.
     pub pain_stat: f32,
+    pub needs: needs::Needs,
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -54,9 +56,14 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, needs: needs::Needs::default(), facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
+    /// Hunger and thirst for one tick; `delta_minutes_per_day` comes from the clock (`30 / minutes per day`).
+    pub fn tick_needs(&mut self, delta_minutes_per_day: f32, running: bool) {
+        self.needs.tick(delta_minutes_per_day, running, false);
+    }
+
     /// Advance wounds one tick: the drop in overall body health caused by bleeding and festering comes off `health`.
     pub fn tick_body(&mut self) {
         let before = self.body.overall_health();
@@ -66,6 +73,8 @@ impl Player {
         let h = self.body.overall_health();
         let mut severe = 0.0;
         if moodles::bleeding(&self.body, h) == 4 { severe += SEVERE_MOODLE_DAMAGE; }
+        if moodles::hungry(self.needs.hunger, h) == 4 { severe += SEVERE_MOODLE_DAMAGE / needs::HUNGRY_DAMAGE_DIVISOR; }
+        if moodles::thirst(self.needs.thirst) == 4 { severe += SEVERE_MOODLE_DAMAGE / needs::THIRST_DAMAGE_DIVISOR; }
         if moodles::sick(self.infection_pct, 0.0, h) == 4 && self.body.general_wound_infection_level(1.0) > self.infection_pct { severe += SEVERE_MOODLE_DAMAGE; }
         self.body.reduce_general_health(severe);
         let target = self.body.pain_target();

@@ -186,3 +186,17 @@ fn an_infected_player_eventually_dies_on_the_server() {
     assert_eq!(health(&mut s, 1), 0.0);
     assert_eq!(health(&mut s, 2), 100.0, "healthy players are unaffected");
 }
+
+#[test]
+fn players_get_thirsty_over_game_time_and_runners_faster() {
+    let mut s = server();
+    s.clock.day_seconds = 60.0; // a game day per minute
+    s.join(1, 0.0, 0.0);
+    s.join(2, 20.0, 0.0);
+    s.handle(2, ClientMsg::Input { seq: 1, dir: [0.0, 1.0], run: true });
+    for _ in 0..(30 * 30) { s.tick(); }
+    let idle = s.player_mut(1).unwrap().needs;
+    let runner = s.player_mut(2).unwrap().needs;
+    assert!(idle.thirst > 0.0 && idle.hunger > 0.0);
+    assert!(runner.thirst > idle.thirst, "running makes you thirstier: {} vs {}", runner.thirst, idle.thirst);
+}
