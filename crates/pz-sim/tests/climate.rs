@@ -313,3 +313,17 @@ fn thunderstorm_fronts_spawn_clouds_that_produce_strikes() {
     assert!(seen_storm && cloudy, "no storm in 12 worlds");
     assert!(events > 20, "storm clouds should strike: {events}");
 }
+
+#[test]
+fn wind_chill_never_exceeds_air_temperature_and_humidity_is_a_fraction() {
+    use pz_sim::climate::*;
+    let mut clock = pz_sim::GameClock::default();
+    let o = Offsets { a: 1.0, b: 2.0, c: -1.0, d: -2.0 };
+    let mut c = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+    for h in 0..200 {
+        c.world_age_hours = 100.0 + h as f64 * 3.7;
+        clock.hour = (h % 24) as f32;
+        let (t, w, hu) = (c.temperature(&clock), c.wind_chill_temperature(&clock), c.humidity(&clock));
+        assert!(w <= t + 1e-4 && (0.0..=1.0).contains(&hu), "t {t} w {w} hu {hu}");
+    }
+}

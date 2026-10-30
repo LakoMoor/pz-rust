@@ -417,6 +417,22 @@ impl Climate {
         base + 1.0 - (5.0 * (1.0 - day_lagged) + 5.0 * night_lagged)
     }
 
+    /// Relative humidity 0..1 (`ClimateValues.humidity`): the humidity noise, damped when the air is cold.
+    pub fn humidity(&self, clock: &GameClock) -> f32 {
+        let noise = (1.0 + self.air(clock).humidity_noise) * 0.5;
+        noise * (1.0 - (45.0 - self.temperature(clock)) / 90.0).clamp(0.0, 1.0)
+    }
+
+    /// Outdoor air temperature felt with the wind (`Temperature.WindchillCelsiusKph` at `windPower * 120` km/h; the
+    /// extra wind that weather fronts add is not included). Never above the plain air temperature.
+    pub fn wind_chill_temperature(&self, clock: &GameClock) -> f32 {
+        let t = self.temperature(clock);
+        let v = self.air(clock).wind * 120.0;
+        let p = v.powf(0.16);
+        let w = 13.12 + 0.6215 * t - 11.37 * p + 0.3965 * t * p;
+        if w < t { w } else { t }
+    }
+
     /// Total precipitation of the front in progress, before it is split into rain and snow.
     pub fn precipitation_now(&self) -> f32 {
         self.period.map_or(0.0, |p| p.intensity(self.world_age_hours))
