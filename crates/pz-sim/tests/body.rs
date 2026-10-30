@@ -88,3 +88,37 @@ fn zombie_hits_wound_the_player() {
     assert!(p.health < 100.0);
     assert!(p.body.parts.iter().any(|b| b.scratch_time > 0.0 || b.cut_time > 0.0 || b.bite_time > 0.0), "a landed hit should leave a wound");
 }
+
+#[test]
+fn a_bandaged_scratch_heals_long_before_an_open_one() {
+    let mut open = Body::default();
+    open.scratch(6, 0.0, 0.0); // 7 time units
+    let mut wrapped = open.clone();
+    wrapped.apply_bandage(6, 100.0);
+    assert!(wrapped.parts[6].bandaged && !open.parts[6].bandaged);
+    let mut ticks = 0;
+    while wrapped.parts[6].scratch_time > 0.0 && ticks < 200_000 { wrapped.update(1.0); ticks += 1; }
+    assert_eq!(wrapped.parts[6].scratch_time, 0.0, "healed");
+    assert_eq!(wrapped.parts[6].bleeding_time, 0.0, "and the bleeding ends with it");
+    // ~7 / 1.5e-4 = 46,667 ticks; the same scratch left open has barely moved.
+    assert!((46_000..48_000).contains(&ticks), "{ticks}");
+    for _ in 0..ticks { open.update(1.0); }
+    assert!(open.parts[6].scratch_time > 6.0, "{}", open.parts[6].scratch_time);
+    // The bandage wore down but never goes negative, and then counts as dirty.
+    assert!(wrapped.parts[6].bandage_life < 100.0);
+    wrapped.parts[6].bandage_life = 0.0;
+    assert!(wrapped.bandage_is_dirty(6));
+    wrapped.remove_bandage(6);
+    assert!(!wrapped.bandage_is_dirty(6));
+}
+
+#[test]
+fn deep_wounds_only_close_under_a_bandage() {
+    let mut b = Body::default();
+    b.parts[7].deep_wound_time = 3.001;
+    for _ in 0..5_000 { b.update(1.0); }
+    assert_eq!(b.parts[7].deep_wound_time, 3.0, "open deep wound is stuck at 3");
+    b.apply_bandage(7, 1_000.0);
+    for _ in 0..200_000 { b.update(1.0); }
+    assert!(b.parts[7].deep_wound_time < 3.0, "bandaged it keeps healing: {}", b.parts[7].deep_wound_time);
+}

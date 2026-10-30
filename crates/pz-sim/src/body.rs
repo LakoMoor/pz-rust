@@ -84,6 +84,22 @@ impl Body {
                 } else { p.bleeding_time -= 2.0e-5 * mult; }
                 if p.bleeding_time < 0.0 { p.bleeding_time = 0.0; }
             }
+            // Healing: wound timers run down faster under a bandage, which wears as it works.
+            if p.scratch_time > 0.0 {
+                if bandaged { p.scratch_time -= 1.5e-4 * mult; p.bandage_life -= 8.0e-5 * mult; } else { p.scratch_time -= 1.0e-5 * mult; }
+                if p.scratch_time < 0.0 { p.scratch_time = 0.0; p.bleeding_time = 0.0; }
+            }
+            if p.cut_time > 0.0 {
+                if bandaged { p.cut_time -= 5.0e-5 * mult; p.bandage_life -= 1.0e-5 * mult; } else { p.cut_time -= 1.0e-6 * mult; }
+                if p.cut_time < 0.0 { p.cut_time = 0.0; p.bleeding_time = 0.0; }
+            }
+            if p.deep_wound_time > 0.0 {
+                if bandaged { p.deep_wound_time -= 2.0e-5 * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.deep_wound_time -= 2.0e-6 * mult; }
+                // An unbandaged deep wound never closes on its own.
+                if !bandaged && p.deep_wound_time < 3.0 { p.deep_wound_time = 3.0; }
+                if p.deep_wound_time < 0.0 { p.deep_wound_time = 0.0; }
+            }
+            if p.bandage_life < 0.0 { p.bandage_life = 0.0; }
         }
         self.reduce_general_health(general);
     }
@@ -118,4 +134,25 @@ impl Body {
         p.bandaged = false;
         p.bleeding_time = (7.5 + r2 * 7.5) * BLEEDING_TIME_MODIFIER[part];
     }
+}
+
+impl Body {
+    /// `BodyPart.setBandaged(true, life)`: wrap a part. Scratches, cuts and bites stop hurting it directly and
+    /// the bleeding slows (see `update`); the bandage then wears out and ends up dirty at `life == 0`.
+    pub fn apply_bandage(&mut self, part: usize, life: f32) {
+        let p = &mut self.parts[part];
+        p.bandaged = true;
+        p.stitched = false;
+        p.bandage_life = life;
+    }
+
+    /// `setBandaged(false, ..)`: take the bandage off.
+    pub fn remove_bandage(&mut self, part: usize) {
+        let p = &mut self.parts[part];
+        p.bandaged = false;
+        p.bandage_life = 0.0;
+    }
+
+    /// `BodyPart.isBandageDirty`: a worn-out bandage is still on but no longer helps with infection.
+    pub fn bandage_is_dirty(&self, part: usize) -> bool { self.parts[part].bandaged && self.parts[part].bandage_life <= 0.0 }
 }
