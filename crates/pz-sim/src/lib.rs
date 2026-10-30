@@ -78,6 +78,8 @@ impl Player {
             hunger: n.hunger, thirst: n.thirst, fatigue: n.fatigue, endurance: n.endurance,
             activity: if running { thermo::met::RUNNING_10KMH } else { thermo::met::DEFAULT },
             world_seconds,
+            hypothermia_level: moodles::hypothermia(self.thermo.temperature),
+            hyperthermia_level: moodles::hyperthermia(self.thermo.temperature),
             ..thermo::Inputs::default()
         };
         self.thermo.update(&i);

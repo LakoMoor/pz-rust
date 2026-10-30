@@ -45,3 +45,15 @@ pub fn thirst(thirst: f32) -> u8 { ladder(thirst, [0.12, 0.25, 0.7, 0.84]) }
 pub fn tired(fatigue: f32, overall_health: f32) -> u8 {
     if overall_health == 0.0 { 0 } else { ladder(fatigue, [0.6, 0.7, 0.8, 0.9]) }
 }
+
+/// `MoodleType.HYPOTHERMIA`: from the core temperature, below 36.5 / 35 / 30 / 25 degrees. (The two lowest levels
+/// are also withheld by high intoxication in the game; that stat is not modelled.) A zero reading means "unset".
+pub fn hypothermia(core_celcius: f32) -> u8 {
+    if core_celcius == 0.0 { return 0; }
+    match core_celcius { t if t < 25.0 => 4, t if t < 30.0 => 3, t if t < 35.0 => 2, t if t < 36.5 => 1, _ => 0 }
+}
+
+/// `MoodleType.HYPERTHERMIA`: above 37.5 / 39 / 40 / 41 degrees.
+pub fn hyperthermia(core_celcius: f32) -> u8 {
+    match core_celcius { t if t > 41.0 => 4, t if t > 40.0 => 3, t if t > 39.0 => 2, t if t > 37.5 => 1, _ => 0 }
+}

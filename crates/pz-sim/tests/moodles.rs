@@ -101,3 +101,13 @@ fn a_severe_bleeding_moodle_drains_health_on_top_of_the_wound() {
     dead.tick_body();
     assert_eq!(dead.health, 0.0);
 }
+
+#[test]
+fn temperature_moodles_follow_the_core_temperature() {
+    use pz_sim::moodles::{hyperthermia, hypothermia};
+    assert_eq!((hypothermia(37.0), hyperthermia(37.0)), (0, 0));
+    assert_eq!([36.4, 34.9, 29.9, 24.9].map(hypothermia), [1, 2, 3, 4]);
+    assert_eq!([37.6, 39.1, 40.1, 41.1].map(hyperthermia), [1, 2, 3, 4]);
+    assert_eq!(hypothermia(36.5), 0);
+    assert_eq!(hyperthermia(37.5), 0);
+}
