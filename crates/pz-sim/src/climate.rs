@@ -289,14 +289,15 @@ impl Climate {
             + (((self.offsets.b as i32).wrapping_sub(self.offsets.a as i32)).wrapping_mul(self.day)) as i64;
         let mut rng = JavaRandom::new(seed);
         let mut rand = |lo: f32, hi: f32| lo + rng.next_float() * (hi - lo);
-        // Per-season chances and rain-time multiplier (`createWeatherPattern`); winter's blizzard logic and its
-        // conditional multiplier are not ported (blizzard 0, multiplier 1).
-        let (storm_chance, tropical_chance, time_mult) = match self.seasons.season(self.year, self.month, self.day) {
-            1 => (75.0, 10.0, 1.25),
-            2 => (60.0, 55.0, 1.0),
-            4 => (100.0, 25.0, 1.35),
-            _ => (10.0, 0.0, 1.0),
+        // Per-season chances and rain-time multiplier (`createWeatherPattern`).
+        let mean_temp = self.seasons.day_temperature(self.year, self.month, self.day).0;
+        let (storm_chance, tropical_chance, blizzard_chance, season_mult) = match self.seasons.season(self.year, self.month, self.day) {
+            1 => (75.0, 10.0, 0.0, 1.25),
+            2 => (60.0, 55.0, 0.0, 1.0),
+            4 => (100.0, 25.0, 0.0, 1.35),
+            _ => (10.0, 0.0, blizzard_chance(mean_temp), 1.0),
         };
+        let time_mult = season_mult * rain_time_multiplier(self.sandbox_rain);
         let _cloud_colour_roll = rand(0.0, 100.0);
         let warm = self.front.kind == 1;
         let (mut kind, mut staged) = (PeriodKind::Rain, 0.0f32);
@@ -306,6 +307,9 @@ impl Climate {
                 kind = PeriodKind::Tropical;
                 staged += 8.0 + rand(0.0, 16.0 * s);
                 for p in [60.0, 30.0] { if rand(0.0, 100.0) < p * s { staged += 5.0 + rand(0.0, 5.0 * s); } }
+            } else if s > 0.75 && blizzard_chance > 0.0 && rand(0.0, 100.0) < blizzard_chance {
+                kind = PeriodKind::Blizzard;
+                staged += 24.0 + rand(0.0, 24.0 * s);
             } else if s > 0.5 && storm_chance > 0.0 && rand(0.0, 100.0) < storm_chance {
                 kind = PeriodKind::Thunderstorm;
                 staged += 5.0 + rand(0.0, 5.0 * s);
@@ -347,9 +351,9 @@ pub struct RainPeriod {
     pub kind: PeriodKind,
 }
 
-/// What a front is made of: ordinary rain, a thunderstorm (stage 3) or a tropical storm (stage 8).
+/// What a front is made of: ordinary rain, a thunderstorm (stage 3), a tropical storm (stage 8) or a blizzard (stage 7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PeriodKind { Rain, Thunderstorm, Tropical }
+pub enum PeriodKind { Rain, Thunderstorm, Tropical, Blizzard }
 
 impl RainPeriod {
     pub fn is_over(&self, hours: f64) -> bool { hours >= self.start_hours + self.duration }
@@ -441,4 +445,19 @@ impl AirFront {
             self.strength = 0.0;
         }
     }
+}
+
+/// Chance (percent) that a strong winter warm-to-cold front is a blizzard, from the day's mean temperature
+/// (`createWeatherPattern`, season 5). Below 5.5 degrees it grows with the cold; the original's `< 0` branch is
+/// unreachable because `< 2.5` matches first, and that is kept.
+pub fn blizzard_chance(mean_temp: f32) -> f32 {
+    if mean_temp >= 5.5 { return 0.0; }
+    let mut c = ((5.5 - mean_temp) * 3.0).clamp(0.0, 85.0) + 25.0;
+    if mean_temp < 2.5 { c += 55.0; }
+    c.min(95.0)
+}
+
+/// `ClimateManager.getRainTimeMultiplierMod` for the sandbox rain setting.
+pub fn rain_time_multiplier(sandbox_rain: i32) -> f32 {
+    match sandbox_rain { 1 => 0.5, 2 => 0.75, 4 => 1.25, 5 => 1.5, _ => 1.0 }
 }

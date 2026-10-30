@@ -269,6 +269,7 @@ fn strong_warm_fronts_sometimes_become_storms_and_last_longer() {
                         PeriodKind::Thunderstorm => { storms += 1; storm_len += p.duration; assert!(p.strength > 0.5); }
                         PeriodKind::Tropical => { tropical += 1; assert!(p.strength > 0.75); }
                         PeriodKind::Rain => { plain += 1; plain_len += p.duration; }
+                        PeriodKind::Blizzard => { assert!(p.strength > 0.75); }
                     }
                 }
             }
@@ -276,4 +277,17 @@ fn strong_warm_fronts_sometimes_become_storms_and_last_longer() {
     }
     assert!(plain > 10 && storms > 0, "plain {plain} storms {storms} tropical {tropical}");
     assert!(storm_len / storms as f64 > plain_len / plain as f64, "storms should outlast ordinary rain");
+}
+
+#[test]
+fn blizzard_chance_and_rain_time_multiplier_follow_the_tables() {
+    use pz_sim::climate::{blizzard_chance, rain_time_multiplier};
+    assert_eq!(blizzard_chance(6.0), 0.0);
+    assert_eq!(blizzard_chance(5.5), 0.0);
+    assert_eq!(blizzard_chance(4.0), (1.5f32 * 3.0) + 25.0);
+    assert_eq!(blizzard_chance(2.5), (3.0f32 * 3.0) + 25.0);
+    assert_eq!(blizzard_chance(1.0), 4.5 * 3.0 + 25.0 + 55.0);
+    // Colder than 0 is no different from 1 degree except the 85 clamp and the 95 cap.
+    assert_eq!(blizzard_chance(-20.0), 95.0);
+    assert_eq!((rain_time_multiplier(1), rain_time_multiplier(3), rain_time_multiplier(5)), (0.5, 1.0, 1.5));
 }
