@@ -286,3 +286,14 @@ fn scripts_read_wounds_from_the_simulated_body() {
     let none: bool = rt.lua.load("return getPlayer():getBodyDamage():getBodyPart(99) == nil").eval().unwrap();
     assert!(none);
 }
+
+#[test]
+fn script_pain_comes_from_the_wounds() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    rt.bind_player(player.clone()).unwrap();
+    player.borrow_mut().body.parts[2].scratch_time = 10.0;
+    let pain: f64 = rt.lua.load("return getPlayer():getBodyDamage():getBodyPart(2):getPain()").eval().unwrap();
+    assert!((pain - 17.0).abs() < 1e-4);
+}

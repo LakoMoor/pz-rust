@@ -32,6 +32,19 @@ impl Default for Part {
 }
 
 impl Part {
+    /// `BodyPart.getPain` for the wounds modelled here (default injury severity): each wound contributes in
+    /// proportion to its remaining time, and a bandage eases the total by a third. Stitches, fractures, bullets,
+    /// glass, burns, wound infection and the temporary extra pain are not ported.
+    pub fn pain(&self) -> f32 {
+        let mut r = 0.0;
+        if self.scratch_time > 0.0 { r += self.scratch_time * 1.7; }
+        if self.cut_time > 0.0 { r += self.cut_time * 2.5; }
+        if self.bite_time > 0.0 { r += if self.bandaged { 30.0 } else { 50.0 }; }
+        if self.deep_wound_time > 0.0 { r += self.deep_wound_time * 3.7; }
+        if self.bandaged { r /= 1.5; }
+        r
+    }
+
     fn reduce(&mut self, v: f32) { self.health = (self.health - v).clamp(0.0, 100.0); }
 }
 

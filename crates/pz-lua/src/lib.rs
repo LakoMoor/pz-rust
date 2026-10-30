@@ -267,7 +267,7 @@ impl Runtime {
             function body:getBodyPart(i)
                 local info = __bodyPart(i)
                 if not info then return nil end
-                return { getPain = function() return chr.__pain[i] or 0 end,
+                return { getPain = function() return info.pain + (chr.__pain[i] or 0) end,
                          getHealth = function() return info.health end,
                          bleeding = function() return info.bleeding end,
                          scratched = function() return info.scratched end,
@@ -302,6 +302,7 @@ impl Runtime {
                 t.set("cut", b.cut_time > 0.0)?;
                 t.set("bitten", b.bite_time > 0.0)?;
                 t.set("bandaged", b.bandaged)?;
+                t.set("pain", b.pain() as f64)?;
                 Ok(mlua::Value::Table(t))
             })?)?;
             let p = player.clone();

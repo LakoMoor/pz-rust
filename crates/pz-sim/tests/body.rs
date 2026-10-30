@@ -122,3 +122,20 @@ fn deep_wounds_only_close_under_a_bandage() {
     for _ in 0..200_000 { b.update(1.0); }
     assert!(b.parts[7].deep_wound_time < 3.0, "bandaged it keeps healing: {}", b.parts[7].deep_wound_time);
 }
+
+#[test]
+fn pain_follows_the_wounds_and_eases_under_a_bandage() {
+    let mut b = Body::default();
+    assert_eq!(b.parts[8].pain(), 0.0);
+    b.parts[8].scratch_time = 10.0; // 17
+    b.parts[8].cut_time = 4.0;      // 10
+    b.parts[8].deep_wound_time = 2.0; // 7.4
+    assert!((b.parts[8].pain() - 34.4).abs() < 1e-4);
+    b.apply_bandage(8, 10.0);
+    assert!((b.parts[8].pain() - 34.4 / 1.5).abs() < 1e-4);
+    // A bite hurts a flat 50, or 30 once wrapped (before the bandage's own 1/1.5).
+    b.parts[3].bite_time = 60.0;
+    assert_eq!(b.parts[3].pain(), 50.0);
+    b.apply_bandage(3, 10.0);
+    assert!((b.parts[3].pain() - 20.0).abs() < 1e-4);
+}
