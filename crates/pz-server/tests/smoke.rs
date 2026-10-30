@@ -18,10 +18,13 @@ fn server_binary_serves_snapshots() {
 
     let mut c = UdpClient::connect(addr).unwrap();
     let mut last = None;
-    for _ in 0..60 {
+    // Keep sending input until enough ticks have run; a loaded machine (CI, a parallel build) can be slow to start.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
         c.send_input([0.0, -1.0], false).unwrap();
         std::thread::sleep(Duration::from_millis(20));
         if let Some(m) = c.latest_snapshot().unwrap() { last = Some(m); }
+        if let Some(ServerMsg::Snapshot { tick, .. }) = &last { if *tick >= 20 { break; } }
     }
     let ServerMsg::Snapshot { tick, you, players, zombies, .. } = last.expect("snapshots received");
     assert!(tick >= 20, "tick {tick}");
