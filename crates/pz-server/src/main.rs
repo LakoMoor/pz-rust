@@ -10,6 +10,7 @@ fn main() {
     let mut pz = PathBuf::from(std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into()));
     let mut map = "Muldraugh, KY".to_string();
     let mut ticks: Option<u64> = None;
+    let mut climate = pz_net::ClimateOptions::default();
     let mut args = std::env::args().skip(1);
     while let Some(k) = args.next() {
         let mut v = || args.next().unwrap_or_else(|| panic!("{k} needs a value"));
@@ -17,6 +18,7 @@ fn main() {
             "--bind" => bind = v(),
             "--pz" => pz = v().into(),
             "--map" => map = v(),
+            f if pz_net::ClimateOptions::FLAGS.contains(&f) => { climate.set(f, &v()).unwrap_or_else(|e| panic!("{e}")); }
             "--ticks" => ticks = Some(v().parse().expect("--ticks N")),
             other => panic!("unknown argument {other}"),
         }
@@ -27,6 +29,8 @@ fn main() {
     let spawn = [12670.0, 1660.0];
     let zombies = (0..8).map(|i| Zombie::new(spawn[0] + 6.0 + i as f32, spawn[1] + (i % 3) as f32, 0)).collect();
     let mut game = Server::new(world, zombies);
+    let (clock, cl) = climate.build();
+    game.set_climate(clock, cl);
     // Same weapon as the single-player client: stats come from the game's item scripts.
     if let Some(b) = pz_items::ItemDb::load(&media.join("scripts")).ok().and_then(|db| db.get("Base.BaseballBat").cloned()) {
         game.set_weapon(pz_sim::Weapon { damage: (b.min_damage + b.max_damage) / 2.0, range: b.max_range, cooldown_ticks: (b.swing_time * 10.0) as u32, crit_chance: b.crit_chance, crit_mult: b.crit_dmg_multiplier, push_back_mod: b.push_back_mod, small_blade: b.small_blade, sound_radius: b.sound_radius, sound_volume: b.sound_volume });

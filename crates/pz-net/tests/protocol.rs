@@ -149,3 +149,22 @@ fn reload_message_refills_from_the_players_pockets() {
     s.handle(1, ClientMsg::Reload);
     assert_eq!(ammo(&mut s), 6);
 }
+
+#[test]
+fn climate_options_parse_validate_and_build_the_requested_world() {
+    let mut o = ClimateOptions::default();
+    assert_eq!(o.set("--pz", "x"), Ok(false));
+    assert_eq!(o.set("--date", "1994-12-22"), Ok(true));
+    assert_eq!(o.set("--hour", "18.5"), Ok(true));
+    assert_eq!(o.set("--cycle", "night"), Ok(true));
+    assert_eq!(o.set("--rain-setting", "5"), Ok(true));
+    assert!(o.set("--date", "1994-13-01").is_err());
+    assert!(o.set("--hour", "25").is_err());
+    assert!(o.set("--cycle", "dusk").is_err());
+    assert!(o.set("--rain-setting", "9").is_err());
+    let (clock, climate) = o.build();
+    assert_eq!((climate.year, climate.month, climate.day, climate.sandbox_rain), (1994, 11, 22, 5));
+    assert_eq!(clock.hour, 18.5);
+    assert_eq!(clock.night_strength(), 1.0);
+    assert!((clock.dawn - 7.82).abs() < 0.05, "midwinter dawn {}", clock.dawn);
+}

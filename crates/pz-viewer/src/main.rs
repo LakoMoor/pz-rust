@@ -116,18 +116,20 @@ fn emit(inst: &mut Vec<Instance>, batches: &mut Vec<Batch>, page: assets::PageKe
 struct Args {
     connect: Option<String>,
     pz: PathBuf, map: String, at: [f32; 2], zoom: f32, size: (u32, u32), shot: Option<PathBuf>,
+    climate: pz_net::ClimateOptions,
 }
 
 fn parse_args() -> Args {
     let mut a = Args {
         connect: None,
         pz: std::env::var("PZ_DIR").map(PathBuf::from).unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into()),
-        map: "Muldraugh, KY".into(), at: [12700.0, 1700.0], zoom: 0.5, size: (1600, 900), shot: None,
+        map: "Muldraugh, KY".into(), at: [12700.0, 1700.0], zoom: 0.5, size: (1600, 900), shot: None, climate: Default::default(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
         let mut v = || it.next().unwrap_or_else(|| panic!("{k} needs a value"));
         match k.as_str() {
+            f if pz_net::ClimateOptions::FLAGS.contains(&f) => { a.climate.set(f, &v()).unwrap_or_else(|e| panic!("{e}")); }
             "--pz" => a.pz = v().into(),
             "--connect" => a.connect = Some(v()),
             "--map" => a.map = v(),
@@ -167,8 +169,7 @@ fn make_scene(a: &Args) -> Scene {
         .map(|&(dx, dy)| (sx + dx, sy + dy))
         .filter(|&(x, y)| world.has_floor(x, y, 0) && world.flags(x, y, 0) & pz_world::flag::SOLID == 0)
         .map(|(x, y)| Zombie::new(x as f32, y as f32, 0)).collect();
-    let mut clock = GameClock::default();
-    let climate = pz_net::new_climate(&mut clock);
+    let (clock, climate) = a.climate.build();
     Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies, clock, climate }
 }
 

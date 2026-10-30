@@ -148,6 +148,8 @@ impl Server {
         Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
+    /// Replace the clock and climate (e.g. from command-line options).
+    pub fn set_climate(&mut self, clock: GameClock, climate: pz_sim::climate::Climate) { self.clock = clock; self.climate = climate; }
     pub fn set_weapon(&mut self, w: Weapon) { self.weapon = w; }
     /// Give joining players this (loaded) firearm; `Shoot` does nothing without one.
     pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
@@ -243,4 +245,47 @@ pub fn reload_from_inventory(def: &pz_items::ItemDef, gun: &mut Gun, inv: &mut p
 pub fn new_climate(clock: &mut GameClock) -> pz_sim::climate::Climate {
     use pz_sim::climate::{Climate, Offsets, Seasons};
     Climate::new(Seasons::default(), Offsets { a: 4000.0, b: 12000.0, c: -4000.0, d: -12000.0 }, 1993, 6, 9, clock)
+}
+
+/// Command-line climate settings shared by the viewer and the server: `--date YYYY-MM-DD`, `--hour H`,
+/// `--cycle normal|day|night`, `--rain-setting 1..5` (sandbox rain frequency).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClimateOptions {
+    pub date: (i32, i32, i32),
+    pub hour: f32,
+    pub cycle: pz_sim::DayNight,
+    pub sandbox_rain: i32,
+}
+
+impl Default for ClimateOptions {
+    fn default() -> Self { Self { date: (1993, 7, 9), hour: 9.0, cycle: pz_sim::DayNight::Normal, sandbox_rain: 3 } }
+}
+
+impl ClimateOptions {
+    pub const FLAGS: [&'static str; 4] = ["--date", "--hour", "--cycle", "--rain-setting"];
+
+    /// Consume `flag value` if it is a climate flag; returns false for unrelated flags.
+    pub fn set(&mut self, flag: &str, value: &str) -> Result<bool, String> {
+        match flag {
+            "--date" => {
+                let p: Vec<i32> = value.split('-').map(|x| x.parse().map_err(|_| format!("bad date {value}"))).collect::<Result<_, _>>()?;
+                if p.len() != 3 || !(1..=12).contains(&p[1]) || !(1..=31).contains(&p[2]) { return Err(format!("--date wants YYYY-MM-DD, got {value}")); }
+                self.date = (p[0], p[1], p[2]);
+            }
+            "--hour" => self.hour = value.parse::<f32>().ok().filter(|h| (0.0..24.0).contains(h)).ok_or(format!("--hour wants 0..24, got {value}"))?,
+            "--cycle" => self.cycle = match value { "normal" => pz_sim::DayNight::Normal, "day" => pz_sim::DayNight::EndlessDay, "night" => pz_sim::DayNight::EndlessNight, _ => return Err(format!("--cycle wants normal|day|night, got {value}")) },
+            "--rain-setting" => self.sandbox_rain = value.parse::<i32>().ok().filter(|r| (1..=5).contains(r)).ok_or(format!("--rain-setting wants 1..5, got {value}"))?,
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// Build the clock and climate for these options (month is 1-based on the command line).
+    pub fn build(&self) -> (GameClock, pz_sim::climate::Climate) {
+        use pz_sim::climate::{Climate, Offsets, Seasons};
+        let mut clock = GameClock { hour: self.hour, cycle: self.cycle, ..GameClock::default() };
+        let mut climate = Climate::new(Seasons::default(), Offsets { a: 4000.0, b: 12000.0, c: -4000.0, d: -12000.0 }, self.date.0, self.date.1 - 1, self.date.2, &mut clock);
+        climate.sandbox_rain = self.sandbox_rain;
+        (clock, climate)
+    }
 }
