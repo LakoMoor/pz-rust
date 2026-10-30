@@ -62,3 +62,21 @@ fn class_hierarchy_and_events_work_with_the_games_isbaseobject() {
     let hits: Vec<i32> = rt.lua.globals().get::<mlua::Table>("hits").unwrap().sequence_values().map(|v| v.unwrap()).collect();
     assert_eq!(hits, vec![7, 8]);
 }
+
+#[test]
+fn scripts_can_look_up_item_definitions_from_the_real_item_scripts() {
+    let Some(dir) = lua_dir() else { return };
+    let scripts = dir.parent().unwrap().join("scripts");
+    let db = std::sync::Arc::new(pz_items::ItemDb::load(&scripts).unwrap());
+    let axe_weight = db.get("Base.Axe").unwrap().weight as f64;
+    let rt = Runtime::new().unwrap();
+    rt.bind_items(db).unwrap();
+    let (w, ranged, pistol_ranged, name): (f64, bool, bool, String) = rt.lua.load(r#"
+        local axe = getScriptManager():getItem("Base.Axe")
+        local pistol = InventoryItemFactory.CreateItem("Base.Pistol")
+        return axe:getActualWeight(), axe:isRanged(), pistol:isRanged(), pistol:getFullType()
+    "#).eval().unwrap();
+    assert_eq!((w, ranged, pistol_ranged, name.as_str()), (axe_weight, false, true, "Base.Pistol"));
+    let missing: bool = rt.lua.load(r#"return getScriptManager():getItem("Base.NoSuchThing") == nil"#).eval().unwrap();
+    assert!(missing);
+}

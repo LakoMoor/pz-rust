@@ -2,7 +2,9 @@
 //! this uses vendored Lua 5.1. Only the pure-Lua parts of the Java API are provided so far.
 
 use mlua::{Lua, Result};
+use pz_items::{ItemDb, ItemDef};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Java-side globals the scripts rely on at load time. `Events.<Name>.Add(fn)` registers callbacks;
 /// [`Runtime::trigger`] calls them. Any unknown event name is created on first use, like the original.
@@ -51,5 +53,50 @@ impl Runtime {
     pub fn run_file(&self, path: &Path) -> Result<()> {
         let src = std::fs::read(path).map_err(mlua::Error::external)?;
         self.lua.load(&src[..]).set_name(format!("@{}", path.display())).exec()
+    }
+}
+
+fn item_table(lua: &Lua, def: &ItemDef) -> Result<mlua::Table> {
+    let t = lua.create_table()?;
+    let id = def.id.clone();
+    let short = id.split_once('.').map_or(id.clone(), |(_, n)| n.to_string());
+    let mut getter = |name: &str, v: mlua::Value| -> Result<()> {
+        let f = lua.create_function(move |_, _: mlua::MultiValue| Ok(v.clone()))?;
+        t.set(name, f)
+    };
+    getter("getFullType", mlua::Value::String(lua.create_string(&id)?))?;
+    getter("getName", mlua::Value::String(lua.create_string(&short)?))?;
+    getter("getType", mlua::Value::String(lua.create_string(&short)?))?;
+    getter("getTypeString", mlua::Value::String(lua.create_string(&def.item_type)?))?;
+    getter("getDisplayCategory", mlua::Value::String(lua.create_string(&def.display_category)?))?;
+    getter("getActualWeight", mlua::Value::Number(def.weight as f64))?;
+    getter("getWeight", mlua::Value::Number(def.weight as f64))?;
+    getter("getMinDamage", mlua::Value::Number(def.min_damage as f64))?;
+    getter("getMaxDamage", mlua::Value::Number(def.max_damage as f64))?;
+    getter("getMaxRange", mlua::Value::Number(def.max_range as f64))?;
+    getter("isRanged", mlua::Value::Boolean(def.is_firearm()))?;
+    Ok(t)
+}
+
+impl Runtime {
+    /// Expose the parsed item scripts the way scripts see them:
+    /// `getScriptManager():getItem("Base.Axe")` (nil if unknown) and `InventoryItemFactory.CreateItem(id)`.
+    pub fn bind_items(&self, db: Arc<ItemDb>) -> Result<()> {
+        let lua = &self.lua;
+        let lookup = {
+            let db = db.clone();
+            lua.create_function(move |lua, id: String| match db.get(&id) {
+                Some(def) => item_table(lua, def).map(mlua::Value::Table),
+                None => Ok(mlua::Value::Nil),
+            })?
+        };
+        let manager = lua.create_table()?;
+        let l2 = lookup.clone();
+        manager.set("getItem", lua.create_function(move |_, (_this, id): (mlua::Value, String)| l2.call::<mlua::Value>(id))?)?;
+        let m2 = manager.clone();
+        lua.globals().set("getScriptManager", lua.create_function(move |_, ()| Ok(m2.clone()))?)?;
+        let factory = lua.create_table()?;
+        factory.set("CreateItem", lookup)?;
+        lua.globals().set("InventoryItemFactory", factory)
     }
 }
