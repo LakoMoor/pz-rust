@@ -223,12 +223,16 @@ pub struct Climate {
     pub front: AirFront,
     /// Fronts arrive by themselves when the air mass flips sign (`ClimateManager.updateValues`).
     pub natural_fronts: bool,
+    /// Live thunderstorm clouds and the events they have produced since the caller last took them.
+    clouds: Vec<crate::thunder::ThunderCloud>,
+    pub thunder: Vec<crate::thunder::ThunderEvent>,
+    rng: u32,
     last_hour: f32,
 }
 
 impl Climate {
     pub fn new(seasons: Seasons, offsets: Offsets, year: i32, month: i32, day: i32, clock: &mut GameClock) -> Self {
-        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, period: None, front: AirFront::default(), natural_fronts: true, last_hour: clock.hour };
+        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, period: None, front: AirFront::default(), natural_fronts: true, clouds: Vec::new(), thunder: Vec::new(), rng: 0x2545_F491, last_hour: clock.hour };
         c.start_day(clock);
         c
     }
@@ -257,7 +261,23 @@ impl Climate {
             self.hour_changed(clock);
         }
         self.last_hour = clock.hour;
+        self.step_storms(clock);
     }
+
+    /// Move the storm clouds along and collect their strike and rumble events into `thunder`.
+    fn step_storms(&mut self, clock: &GameClock) {
+        let _ = clock;
+        let mut rng = self.rng;
+        let mut rand = move |lo: f32, hi: f32| { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; lo + (rng as f32 / u32::MAX as f32) * (hi - lo) };
+        for c in &mut self.clouds {
+            if let Some(e) = c.tick(&mut rand) { self.thunder.push(e); }
+        }
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223) | 1;
+        self.clouds.retain(|c| c.is_running());
+    }
+
+    /// Whether a thunderstorm cloud is alive (`ThunderStorm.HasActiveThunderClouds`).
+    pub fn has_thunder_clouds(&self) -> bool { !self.clouds.is_empty() }
 
     /// `ClimateManager.updateValues` on an hour change: when the air mass changes sign, the front that built up
     /// during the previous air mass breaks as a weather period, and tracking starts over for the new sign.
@@ -280,7 +300,7 @@ impl Climate {
     /// offsets, the front's maximum duration (24-48 h x strength warm-to-cold, 12-24 h cold-to-warm) plus the
     /// opening and closing stages at their mean length, and the rain threshold `0.35 - 0.2 x strength`.
     /// The random draws are not in the original's exact order, so the length of a given front can differ.
-    fn begin_period(&mut self, _clock: &GameClock) {
+    fn begin_period(&mut self, clock: &GameClock) {
         let s = self.front.strength;
         if s <= 0.0 { return; }
         let seed = ((self.year - 1990).wrapping_mul(100000)) as i64
@@ -322,6 +342,18 @@ impl Climate {
         let max_duration = rand(lo, hi) * s;
         let duration = (max_duration.max(staged) as f64 + 3.0 + 2.5 * s as f64) * time_mult as f64;
         self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength: s, rain_threshold: 0.35 - s * 0.2, kind });
+        if matches!(kind, PeriodKind::Thunderstorm | PeriodKind::Tropical) {
+            // One or two clouds crossing the map for the length of the storm (`WeatherPeriod.updateCurrentStage`:
+            // `Rand.Next(1, 3)` clouds, one for a tropical storm), entering at the front's wind angle.
+            let tropical = kind == PeriodKind::Tropical;
+            let (radius, ratio, strength) = crate::thunder::storm_cloud_params(s, tropical);
+            let count = if tropical { 1 } else { 1 + (rand(0.0, 2.0) as u32).min(1) };
+            for _ in 0..count {
+                let (sx, sy) = (rand(-3000.0, 25000.0), rand(-3000.0, 20000.0));
+                let (ex, ey) = (rand(-3000.0, 25000.0), rand(-3000.0, 20000.0));
+                self.clouds.push(crate::thunder::ThunderCloud::new([sx, sy], [ex, ey], radius, strength, ratio, duration, clock.day_seconds));
+            }
+        }
     }
 
     /// Current air mass (wind and temperature offset) at the clock's time.

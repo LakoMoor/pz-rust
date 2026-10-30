@@ -291,3 +291,25 @@ fn blizzard_chance_and_rain_time_multiplier_follow_the_tables() {
     assert_eq!(blizzard_chance(-20.0), 95.0);
     assert_eq!((rain_time_multiplier(1), rain_time_multiplier(3), rain_time_multiplier(5)), (0.5, 1.0, 1.5));
 }
+
+#[test]
+fn thunderstorm_fronts_spawn_clouds_that_produce_strikes() {
+    use pz_sim::climate::{Climate, Offsets, PeriodKind, Seasons};
+    use pz_sim::{GameClock, TICK_HZ};
+    let (mut seen_storm, mut events, mut cloudy) = (false, 0usize, false);
+    for seed in 0..12 {
+        let mut clock = GameClock { hour: 6.0, day_seconds: 60.0, ..GameClock::default() };
+        let o = Offsets { a: 500.0 + seed as f64 * 613.0, b: 9000.0 + seed as f64 * 77.0, c: -3000.0, d: -9000.0 };
+        let mut cl = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+        for _ in 0..(400.0 * 60.0 * TICK_HZ) as u32 {
+            clock.tick();
+            cl.advance(&mut clock);
+            seen_storm |= matches!(cl.period.map(|p| p.kind), Some(PeriodKind::Thunderstorm | PeriodKind::Tropical));
+            cloudy |= cl.has_thunder_clouds();
+            events += cl.thunder.drain(..).filter(|e| e.strike || e.rumble).count();
+        }
+        assert!(!cl.has_thunder_clouds() || cl.period.is_some(), "clouds only exist during a storm period");
+    }
+    assert!(seen_storm && cloudy, "no storm in 12 worlds");
+    assert!(events > 20, "storm clouds should strike: {events}");
+}
