@@ -9,6 +9,9 @@ pub const PARTS: usize = 17;
 pub const DAMAGE_MODIFIER: [f32; PARTS] = [0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 0.35, 0.4, 0.6, 0.7, 0.4, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2];
 pub const BLEEDING_TIME_MODIFIER: [f32; PARTS] = [0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5, 0.9, 1.0, 1.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.2, 0.2];
 
+/// `BodyPartType.painModifier`: how strongly each part's pain counts toward the character's pain stat.
+pub const PAIN_MODIFIER: [f32; PARTS] = [0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.7, 0.78, 0.8, 0.8, 0.7, 0.7, 0.7, 0.6, 0.6, 0.5, 0.5];
+
 /// `BodyPart.damageScaler`.
 const SCALER: f32 = 0.0057142857;
 
@@ -293,5 +296,12 @@ impl Body {
         let p = &mut self.parts[part];
         p.burn_time = time;
         p.bleeding_time += time * (0.3 + r * 0.3) * BLEEDING_TIME_MODIFIER[part];
+    }
+}
+
+impl Body {
+    /// The level the `PAIN` stat is pulled toward: every part's pain weighted by its modifier (no painkillers).
+    pub fn pain_target(&self) -> f32 {
+        self.parts.iter().zip(PAIN_MODIFIER).map(|(p, m)| p.pain() * m).sum()
     }
 }

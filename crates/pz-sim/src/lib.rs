@@ -40,6 +40,8 @@ pub struct Player {
     infection: Option<infection::Infection>,
     /// `ZOMBIE_INFECTION` stat, 0..=100: how far the zombie infection has progressed.
     pub infection_pct: f32,
+    /// `PAIN` stat: rises toward the body's pain slowly (1/500 of the gap per tick) and drops at once when it eases.
+    pub pain_stat: f32,
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -52,13 +54,15 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     /// Advance wounds one tick: the drop in overall body health caused by bleeding and festering comes off `health`.
     pub fn tick_body(&mut self) {
         let before = self.body.overall_health();
         self.body.update(1.0);
+        let target = self.body.pain_target();
+        self.pain_stat = if target > self.pain_stat { self.pain_stat + (target - self.pain_stat) / 500.0 } else { target };
         self.health = (self.health - (before - self.body.overall_health())).max(0.0);
     }
 

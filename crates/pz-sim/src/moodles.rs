@@ -26,3 +26,9 @@ pub fn bleeding(body: &Body, overall_health: f32) -> u8 {
 pub fn sick(apparent_infection_pct: f32, sickness: f32, overall_health: f32) -> u8 {
     if overall_health == 0.0 { 0 } else { ladder(apparent_infection_pct / 100.0 + sickness, [0.25, 0.5, 0.75, 0.9]) }
 }
+
+/// `MoodleType.PAIN`: from the pain stat, thresholds 10 / 20 / 50 / 75. (The game only re-evaluates it every
+/// 120 ticks; callers wanting that lag should sample accordingly.)
+pub fn pain(pain_stat: f32, overall_health: f32) -> u8 {
+    if overall_health == 0.0 { 0 } else { ladder(pain_stat, [10.0, 20.0, 50.0, 75.0]) }
+}

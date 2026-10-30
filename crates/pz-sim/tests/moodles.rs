@@ -53,3 +53,30 @@ fn an_infected_player_gets_sicker_on_the_way_to_death() {
     }
     assert!(seen[0] && seen[1] && seen[2] && seen[3], "{seen:?}");
 }
+
+#[test]
+fn pain_stat_creeps_up_with_wounds_and_levels_follow_thresholds() {
+    use pz_sim::Player;
+    assert_eq!(pain(10.0, 100.0), 0);
+    assert_eq!(pain(11.0, 100.0), 1);
+    assert_eq!(pain(21.0, 100.0), 2);
+    assert_eq!(pain(51.0, 100.0), 3);
+    assert_eq!(pain(76.0, 100.0), 4);
+    assert_eq!(pain(90.0, 0.0), 0);
+    let mut p = Player::new(0.0, 0.0);
+    p.body.parts[8].cut_time = 20.0; // head cut: 50 pain * 0.8 = 40
+    p.body.parts[7].deep_wound_time = 10.0; // torso: 37 * 0.78
+    let target = p.body.pain_target();
+    assert!((target - (50.0 * 0.8 + 37.0 * 0.78)).abs() < 1e-3, "{target}");
+    p.tick_body();
+    assert!(p.pain_stat > 0.0 && p.pain_stat < target / 100.0, "pain creeps up: {}", p.pain_stat);
+    for _ in 0..3000 { p.tick_body(); }
+    assert!(p.pain_stat > 0.9 * target.min(60.0), "after ~100 s it has nearly caught up: {} vs {target}", p.pain_stat);
+    // When the wounds heal the stat drops immediately.
+    p.body.parts[8].cut_time = 0.0;
+    p.body.parts[7].deep_wound_time = 0.0;
+    p.tick_body();
+    // It snaps down to what is left (a wound may have started to fester meanwhile), not back up slowly.
+    assert_eq!(p.pain_stat, p.body.pain_target());
+    assert!(p.pain_stat < 0.5, "{}", p.pain_stat);
+}
