@@ -324,7 +324,7 @@ impl ApplicationHandler for App {
                     let scn = &mut self.scene;
                     scn.clock.tick();
                     scn.climate.advance(&mut scn.clock);
-                    let weather = scn.clock.weather_now(scn.climate.rain());
+                    let weather = scn.clock.weather_now(scn.climate.rain_at(&scn.clock));
                     for zb in &mut scn.zombies { zb.tick_in(&mut scn.player, &mut scn.world, &weather); }
                     self.acc -= TICK_DT;
                 }

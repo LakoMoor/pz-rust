@@ -317,10 +317,39 @@ impl Climate {
         self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength, rain_threshold });
     }
 
-    /// Current rain intensity (feeds the zombies' vision penalty).
-    pub fn rain(&self) -> f32 {
+    /// Air temperature in degrees C (`ClimateValues`): the seasonal mean plus the air-mass term, warmed by up to
+    /// 5 degrees through the lagged daylight and cooled by up to 5 through the lagged night.
+    pub fn temperature(&self, clock: &GameClock) -> f32 {
+        let (mean, _) = self.seasons.day_temperature(self.year, self.month, self.day);
+        let base = mean + self.air(clock).temperature_offset();
+        let mut dd = clock.dusk + 4.0;
+        if dd >= 24.0 { dd -= 24.0; }
+        let day_lagged = crate::time_lerp_hours(clock.hour, clock.dawn + 4.0, dd);
+        let night_lagged = crate::time_lerp_hours(clock.hour, dd, clock.dawn + 4.0);
+        base + 1.0 - (5.0 * (1.0 - day_lagged) + 5.0 * night_lagged)
+    }
+
+    /// Total precipitation of the front in progress, before it is split into rain and snow.
+    pub fn precipitation_now(&self) -> f32 {
         self.period.map_or(0.0, |p| p.intensity(self.world_age_hours))
     }
+
+    /// Whether what falls is snow: below freezing. (The original also requires winter, or the Winter-is-Coming
+    /// mode, but the season dates are not ported, so a cold snap in any season counts.)
+    pub fn is_snow(&self, clock: &GameClock) -> bool { self.temperature(clock) < 0.0 }
+
+    /// `ClimateManager.getRainIntensity`: precipitation that is not snow (feeds the zombies' vision penalty).
+    pub fn rain_at(&self, clock: &GameClock) -> f32 {
+        if self.is_snow(clock) { 0.0 } else { self.precipitation_now() }
+    }
+
+    /// `ClimateManager.getSnowIntensity`.
+    pub fn snow_at(&self, clock: &GameClock) -> f32 {
+        if self.is_snow(clock) { self.precipitation_now() } else { 0.0 }
+    }
+
+    /// Rain ignoring temperature; kept for callers without a clock.
+    pub fn rain(&self) -> f32 { self.precipitation_now() }
 }
 
 /// `ClimateManager.AirFront`: tracks the strength of the front that builds up while one air mass (warm = 1,

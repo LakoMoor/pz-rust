@@ -198,7 +198,7 @@ impl Server {
         }
         self.clock.tick();
         self.climate.advance(&mut self.clock);
-        let weather = self.clock.weather_now(self.climate.rain());
+        let weather = self.clock.weather_now(self.climate.rain_at(&self.clock));
         // Each zombie chases the nearest living player on its floor.
         for zb in &mut self.zombies {
             // Prefer the nearest living player; with none on this floor, the nearest body to feed on.

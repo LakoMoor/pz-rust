@@ -524,7 +524,7 @@ fn clerp(t: f32, a: f32, b: f32) -> f32 {
 
 /// `ClimateManager.getTimeLerp(.., doClerp = true)` over hours: 0 outside [min, max], rising to 1 at the middle and back.
 /// A window with min > max wraps past midnight.
-fn time_lerp_hours(cur: f32, min: f32, max: f32) -> f32 {
+pub(crate) fn time_lerp_hours(cur: f32, min: f32, max: f32) -> f32 {
     let n = |h: f32| (h / 24.0).clamp(0.0, 1.0);
     let (cur, min, max) = (n(cur), n(min), n(max));
     let (c, len) = if min <= max {

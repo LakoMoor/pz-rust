@@ -203,3 +203,25 @@ fn rain_fronts_arrive_on_their_own_over_weeks() {
     let dry_share = 1.0 - wet_ticks as f32 / (120.0 * 120.0 * TICK_HZ);
     assert!(dry_share > 0.5, "most of the time it is dry: {dry_share}");
 }
+
+#[test]
+fn cold_precipitation_falls_as_snow_and_does_not_blind_zombies() {
+    use pz_sim::climate::{Climate, Offsets, Seasons};
+    use pz_sim::GameClock;
+    let o = Offsets { a: 1200.0, b: 9000.0, c: -2000.0, d: -9000.0 };
+    // Midsummer afternoon vs. January pre-dawn.
+    let (mut summer, mut winter) = (GameClock { hour: 15.0, ..GameClock::default() }, GameClock { hour: 4.0, ..GameClock::default() });
+    let mut cs = Climate::new(Seasons::default(), o, 1993, 6, 23, &mut summer);
+    let mut cw = Climate::new(Seasons::default(), o, 1994, 0, 22, &mut winter);
+    let (ts, tw) = (cs.temperature(&summer), cw.temperature(&winter));
+    assert!(ts > 15.0 && tw < ts - 15.0, "summer {ts} winter {tw}");
+    // The day warms from the small hours towards the afternoon.
+    let mut noon = winter; noon.hour = 15.0;
+    assert!(cw.temperature(&noon) > tw + 3.0);
+    for c in [&mut cs, &mut cw] { c.natural_fronts = false; c.start_rain(10.0, 1.0, 0.0); c.world_age_hours += 5.0; }
+    assert!(cs.precipitation_now() > 0.0 && cw.precipitation_now() > 0.0);
+    assert!(cs.rain_at(&summer) > 0.0 && cs.snow_at(&summer) == 0.0);
+    // In deep winter the same front is snow (when the air is below freezing), so it adds no rain penalty.
+    if cw.is_snow(&winter) { assert_eq!(cw.rain_at(&winter), 0.0); assert!(cw.snow_at(&winter) > 0.0); }
+    else { assert!(cw.rain_at(&winter) > 0.0 && cw.snow_at(&winter) == 0.0); }
+}
