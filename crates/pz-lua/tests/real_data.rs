@@ -246,3 +246,24 @@ fn scripts_use_the_players_inventory() {
     assert_eq!(inv.borrow().count("Base.Bullets9mm"), 2);
     assert!((weight - inv.borrow().weight() as f64).abs() < 1e-6);
 }
+
+#[test]
+fn the_real_adjust_max_time_reacts_to_moodles_and_pain() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)))).unwrap();
+    rt.add_lua_root(&dir.join("shared")).unwrap();
+    rt.run_file(&dir.join("shared/TimedActions/ISBaseTimedAction.lua")).unwrap();
+    let t = |setup: &str| -> f64 {
+        rt.lua.load(format!("local p = getPlayer(); p.__moodles, p.__pain = {{}}, {{}}; {setup}; return ISBaseTimedAction:new(p):adjustMaxTime(100)")).eval().unwrap()
+    };
+    assert_eq!(t("local _ = 0"), 100.0);
+    assert_eq!(t("p:setMoodleLevel('UNHAPPY', 2)"), 150.0);
+    assert_eq!(t("p:setMoodleLevel('UNHAPPY', 2); p:setMoodleLevel('DRUNK', 4)"), 300.0);
+    // Hurt hands: 0..3 are Hand_L..ForeArm_R, each pain point adds 1/300 of the time.
+    assert!((t("p:setPain(0, 30); p:setPain(3, 30)") - 120.0).abs() < 1e-9);
+    // Instant actions are never stretched.
+    let one: f64 = rt.lua.load("return ISBaseTimedAction:new(getPlayer()):adjustMaxTime(1)").eval().unwrap();
+    assert_eq!(one, 1.0);
+}

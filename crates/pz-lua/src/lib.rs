@@ -101,6 +101,13 @@ ISLogSystem = { logAction = function() end }
 HaloTextHelper = { addBadText = function() end }
 function getCore() return { getOptionTimedActionGameSpeedReset = function() return false end } end
 
+MoodleType = setmetatable({}, { __index = function(_, k) return k end })
+BodyPartType = { Hand_L = 0, Hand_R = 1, ForeArm_L = 2, ForeArm_R = 3, UpperArm_L = 4, UpperArm_R = 5, Torso_Upper = 6,
+    Torso_Lower = 7, Head = 8, Neck = 9, Groin = 10, UpperLeg_L = 11, UpperLeg_R = 12, LowerLeg_L = 13, LowerLeg_R = 14,
+    Foot_L = 15, Foot_R = 16, MAX = 17 }
+function BodyPartType.ToIndex(i) return i end
+function BodyPartType.FromIndex(i) return i end
+
 function __startAction(chr, act)
     chr.__actions = { act }
     if act:valid() then act:waitToStart() end
@@ -250,6 +257,15 @@ impl Runtime {
                          isEmpty = function() return #list == 0 end }
             end
             function chr:getTimedActionToRetrigger() return self.__retrigger end
+            -- Moodle levels (0 = none) and per-body-part pain default to a healthy character; tests and the
+            -- simulation set them with setMoodleLevel / setPain.
+            chr.__moodles, chr.__pain = {}, {}
+            function chr:setMoodleLevel(name, level) self.__moodles[name] = level end
+            function chr:setPain(part, pain) self.__pain[part] = pain end
+            function chr:getMoodles() return { getMoodleLevel = function(_, name) return self.__moodles[name] or 0 end } end
+            local body = chr:getBodyDamage()
+            function body:getBodyPart(i) return { getPain = function() return chr.__pain[i] or 0 end } end
+            function chr:getTimedActionTimeModifier() return 1.0 end
             function chr:isAsleep() return false end
             function chr:isFarming() return self.__farming == true end
             function chr:isDraggingCorpse() return false end
