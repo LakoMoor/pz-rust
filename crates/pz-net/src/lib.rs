@@ -137,6 +137,10 @@ pub struct Server {
     packs: BTreeMap<ClientId, pz_items::Inventory>,
     /// Game time; sets how far zombies see.
     pub clock: GameClock,
+    /// In-game hours since the server started; infections are timed against it.
+    pub world_hours: f32,
+    /// Sandbox `lore.mortality` (1-7): how fast a bite kills. The game's default is 5 (2-3 days).
+    pub mortality: u8,
     /// Calendar and climate driving `clock` (dawn, dusk, daily fog); the game starts on 1993-07-09, like the original.
     pub climate: pz_sim::climate::Climate,
 }
@@ -145,7 +149,7 @@ impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
         let mut clock = GameClock::default();
         let climate = new_climate(&mut clock);
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, world_hours: 0.0, mortality: 5, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
     /// Replace the clock and climate (e.g. from command-line options).
@@ -155,6 +159,8 @@ impl Server {
     pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
     /// Enable reloading: `def` is the wielded firearm's script and each player joins carrying `spare_rounds` of its ammo.
     pub fn set_ammo_kit(&mut self, db: pz_items::ItemDb, def: pz_items::ItemDef, spare_rounds: u32) { self.kit = Some((db, def, spare_rounds)); }
+    pub fn player_mut(&mut self, id: ClientId) -> Option<&mut Player> { self.players.get_mut(&id) }
+
     pub fn join(&mut self, id: ClientId, x: f32, y: f32) { self.players.insert(id, Player::new(x, y));
         if let Some(g) = self.gun { self.guns.insert(id, g); }
         if let Some((db, def, spare)) = &self.kit {
@@ -197,6 +203,12 @@ impl Server {
             p.tick(self.inputs.get(id).copied().unwrap_or_default(), &mut self.world);
         }
         self.clock.tick();
+        self.world_hours += 24.0 / (self.clock.day_seconds * pz_sim::TICK_HZ);
+        for (id, p) in self.players.iter_mut() {
+            // Deterministic stand-in for Rand.Next: hash of tick and player id.
+            let h = (self.tick as u32).wrapping_mul(2654435761) ^ (*id as u32).wrapping_mul(40503);
+            p.tick_infection(self.world_hours, self.mortality, (h >> 8) as f32 / (1u32 << 24) as f32);
+        }
         self.climate.advance(&mut self.clock);
         let weather = self.clock.weather_now(self.climate.rain_at(&self.clock));
         // Each zombie chases the nearest living player on its floor.

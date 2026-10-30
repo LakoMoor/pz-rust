@@ -168,3 +168,21 @@ fn climate_options_parse_validate_and_build_the_requested_world() {
     assert_eq!(clock.night_strength(), 1.0);
     assert!((clock.dawn - 7.82).abs() < 0.05, "midwinter dawn {}", clock.dawn);
 }
+
+#[test]
+fn an_infected_player_eventually_dies_on_the_server() {
+    let mut s = server();
+    s.mortality = 4; // 3-12 hours
+    s.clock.day_seconds = 120.0; // fast days so the test is short: 1 in-game hour = 5 s
+    s.join(1, 0.0, 0.0);
+    s.player_mut(1).unwrap().infected = true;
+    s.join(2, 20.0, 0.0);
+    let health = |s: &mut Server, id| { let ServerMsg::Snapshot { players, .. } = s.tick(); players.iter().find(|p| p.id == id).unwrap().health };
+    // 13 in-game hours is past the worst case.
+    let ticks = (13.0 * 5.0 * 30.0) as usize;
+    let mut mid = 100.0;
+    for i in 0..ticks { let h = health(&mut s, 1); if i == ticks / 4 { mid = h; } }
+    assert!(mid < 100.0, "sickness should have capped health by a quarter of the way: {mid}");
+    assert_eq!(health(&mut s, 1), 0.0);
+    assert_eq!(health(&mut s, 2), 100.0, "healthy players are unaffected");
+}
