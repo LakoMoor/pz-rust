@@ -19,3 +19,10 @@ pub fn bleeding(body: &Body, overall_health: f32) -> u8 {
     if body.parts[NECK].bleeding_time > 0.0 { return 4; }
     body.num_bleeding().min(4) as u8
 }
+
+/// `MoodleType.SICK`: `apparent infection / 100 + SICKNESS stat`, thresholds 0.25 / 0.5 / 0.75 / 0.9. The apparent
+/// infection is the largest of zombie fever, zombie infection and food sickness (all 0..=100); `sickness` is the
+/// separate 0..1 stat. Dead characters show none.
+pub fn sick(apparent_infection_pct: f32, sickness: f32, overall_health: f32) -> u8 {
+    if overall_health == 0.0 { 0 } else { ladder(apparent_infection_pct / 100.0 + sickness, [0.25, 0.5, 0.75, 0.9]) }
+}

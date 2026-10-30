@@ -393,3 +393,15 @@ fn scripts_see_bleeding_and_injured_moodles_from_the_body() {
     rt.lua.load("getPlayer():setMoodleLevel('BLEEDING', 4)").exec().unwrap();
     assert_eq!(levels(&rt).0, 4);
 }
+
+#[test]
+fn the_sick_moodle_follows_the_infection_for_scripts() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    rt.bind_player(player.clone()).unwrap();
+    let sick = |rt: &Runtime| -> i64 { rt.lua.load("return getPlayer():getMoodles():getMoodleLevel(MoodleType.SICK)").eval().unwrap() };
+    assert_eq!(sick(&rt), 0);
+    player.borrow_mut().infection_pct = 60.0;
+    assert_eq!(sick(&rt), 2);
+}

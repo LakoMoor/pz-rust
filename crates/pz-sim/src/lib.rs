@@ -38,6 +38,8 @@ pub struct Player {
     pub body: body::Body,
     /// Started the first time `tick_infection` sees `infected`.
     infection: Option<infection::Infection>,
+    /// `ZOMBIE_INFECTION` stat, 0..=100: how far the zombie infection has progressed.
+    pub infection_pct: f32,
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -50,7 +52,7 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     /// Advance wounds one tick: the drop in overall body health caused by bleeding and festering comes off `health`.
@@ -69,7 +71,9 @@ impl Player {
             let Some(duration) = infection::mortality_hours(mortality, roll, 1.0) else { return false };
             self.infection = Some(infection::Infection { start: now_hours, duration });
         }
-        self.health = self.infection.unwrap().apply(now_hours, self.health);
+        let inf = self.infection.unwrap();
+        self.infection_pct = inf.progress(now_hours) * 100.0;
+        self.health = inf.apply(now_hours, self.health);
         if self.health <= 0.0 { self.health = 0.0; return true; }
         false
     }
