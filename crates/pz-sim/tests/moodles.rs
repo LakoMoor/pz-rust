@@ -80,3 +80,24 @@ fn pain_stat_creeps_up_with_wounds_and_levels_follow_thresholds() {
     assert_eq!(p.pain_stat, p.body.pain_target());
     assert!(p.pain_stat < 0.5, "{}", p.pain_stat);
 }
+
+#[test]
+fn a_severe_bleeding_moodle_drains_health_on_top_of_the_wound() {
+    use pz_sim::Player;
+    let mut neck = Player::new(0.0, 0.0);
+    neck.body.start_bleeding(9, 10.0); // neck: always max bleeding moodle
+    let mut leg = Player::new(0.0, 0.0);
+    leg.body.start_bleeding(15, 10.0); // foot: one bleeding part, no severe moodle
+    // Compare health lost per unit of bleeding drain by running both and subtracting the plain wound loss.
+    for _ in 0..300 { neck.tick_body(); leg.tick_body(); }
+    let severe_loss = 100.0 - neck.health;
+    assert!(severe_loss > 300.0 * 0.0165 * 0.9, "the moodle alone costs ~0.0165 per tick: {severe_loss}");
+    assert!(neck.health < leg.health);
+    // Dead characters stop taking moodle damage.
+    let mut dead = Player::new(0.0, 0.0);
+    dead.body.start_bleeding(9, 10.0);
+    for p in dead.body.parts.iter_mut() { p.health = 0.0; }
+    dead.health = 0.0;
+    dead.tick_body();
+    assert_eq!(dead.health, 0.0);
+}

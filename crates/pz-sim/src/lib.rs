@@ -61,6 +61,13 @@ impl Player {
     pub fn tick_body(&mut self) {
         let before = self.body.overall_health();
         self.body.update(1.0);
+        // Severe bad moodles (level 4) each cost `healthReductionFromSevereBadMoodles` per tick. Sick counts when the
+        // festering wounds are what makes the character ill (wound infection above the zombie infection).
+        let h = self.body.overall_health();
+        let mut severe = 0.0;
+        if moodles::bleeding(&self.body, h) == 4 { severe += SEVERE_MOODLE_DAMAGE; }
+        if moodles::sick(self.infection_pct, 0.0, h) == 4 && self.body.general_wound_infection_level(1.0) > self.infection_pct { severe += SEVERE_MOODLE_DAMAGE; }
+        self.body.reduce_general_health(severe);
         let target = self.body.pain_target();
         self.pain_stat = if target > self.pain_stat { self.pain_stat + (target - self.pain_stat) / 500.0 } else { target };
         self.health = (self.health - (before - self.body.overall_health())).max(0.0);
@@ -210,6 +217,8 @@ const EAT_RANGE: f32 = 1.0;
 /// ZombieEatBodyState.enter: stateEventDelayTimer = Rand.Next(1800, 3600); read here as ticks (the timer's unit is not verified).
 const EAT_MIN_TICKS: u32 = 1800;
 const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
+/// `BodyDamage.healthReductionFromSevereBadMoodles`.
+const SEVERE_MOODLE_DAMAGE: f32 = 0.0165;
 const ZOMBIE_SPEED: f32 = 1.1; // tiles / second (shamble)
 const ZOMBIE_SIGHT: f32 = 20.0; // IsoZombie.updateVisionRadius: 20 in clear daylight (clamped 10..20)
 
