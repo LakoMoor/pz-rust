@@ -27,11 +27,16 @@ pub struct Part {
     pub stitch_time: f32,
     /// Pain left over from a procedure (stitching), fading by 0.005 per tick.
     pub additional_pain: f32,
+    /// Bone fracture: time left to heal (30-80 when broken).
+    pub fracture_time: f32,
+    pub splint: bool,
+    /// How well the splint is set (0 = none); speeds healing by that factor.
+    pub splint_factor: f32,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0 }
+        Part { health: 100.0, bleeding_time: 0.0, scratch_time: 0.0, cut_time: 0.0, bite_time: 0.0, deep_wound_time: 0.0, bandaged: false, bandage_life: 0.0, stitched: false, stitch_time: 0.0, additional_pain: 0.0, fracture_time: 0.0, splint: false, splint_factor: 0.0 }
     }
 }
 
@@ -48,6 +53,7 @@ impl Part {
         if self.stitch_time > 0.0 && self.stitch_time < 35.0 {
             r += if self.bandaged { (35.0 - self.stitch_time) / 2.0 } else { 35.0 - self.stitch_time };
         }
+        if self.fracture_time > 0.0 { r += if self.splint_factor > 0.0 { self.fracture_time / 2.0 } else { self.fracture_time }; }
         if self.bandaged { r /= 1.5; }
         r + self.additional_pain
     }
@@ -90,6 +96,7 @@ impl Body {
             if p.scratch_time > 0.0 && !bandaged { p.reduce(0.9375 * s); }
             if p.cut_time > 0.0 && !bandaged { p.reduce(1.875 * s); }
             if p.bite_time > 0.0 && !bandaged { p.reduce(2.1875 * s); }
+            if p.fracture_time > 0.0 && !p.splint { p.reduce(3.125 * s); }
             if p.bleeding_time > 0.0 && !bandaged { general += 0.2857143 * s * (p.bleeding_time / 10.0); }
             if p.bite_time > 0.0 {
                 if bandaged {
@@ -118,6 +125,10 @@ impl Body {
                 // An unbandaged deep wound never closes on its own.
                 if !bandaged && p.deep_wound_time < 3.0 { p.deep_wound_time = 3.0; }
                 if p.deep_wound_time < 0.0 { p.deep_wound_time = 0.0; }
+            }
+            if p.fracture_time > 0.0 {
+                p.fracture_time -= if p.splint_factor > 0.0 { 5.0e-5 * mult * p.splint_factor } else { 5.0e-6 * mult };
+                if p.fracture_time < 0.0 { p.fracture_time = 0.0; }
             }
             if p.stitch_time > 0.0 && p.stitch_time < 50.0 {
                 if bandaged { p.stitch_time += (4.0e-4 + 1.0e-4) * mult; p.bandage_life -= 1.0e-4 * mult; } else { p.stitch_time += 2.0e-4 * mult; }
@@ -210,5 +221,24 @@ impl Body {
         }
         p.stitched = false;
         p.additional_pain += end_pain.max(0.0);
+    }
+}
+
+impl Body {
+    /// `BodyPart.generateFracture` (bone fractures enabled): breaks a part for `time` units.
+    /// Falls use 50-80; random trauma 30-50.
+    pub fn fracture(&mut self, part: usize, time: f32) { self.parts[part].fracture_time = time; }
+
+    /// `BodyPart.setSplint(true, factor)`.
+    pub fn apply_splint(&mut self, part: usize, factor: f32) {
+        let p = &mut self.parts[part];
+        p.splint = true;
+        p.splint_factor = factor;
+    }
+
+    pub fn remove_splint(&mut self, part: usize) {
+        let p = &mut self.parts[part];
+        p.splint = false;
+        p.splint_factor = 0.0;
     }
 }

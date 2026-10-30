@@ -163,3 +163,26 @@ fn stitches_close_a_deep_wound_hurt_for_a_while_and_reopen_if_pulled_early() {
     c.remove_stitches(2, 0.0, 0.0, 0.0);
     assert!(c.parts[2].scratch_time >= 2.0 && c.parts[2].deep_wound_time == 0.0);
 }
+
+#[test]
+fn a_fracture_hurts_and_damages_until_splinted_which_also_heals_faster() {
+    let mut open = Body::default();
+    open.fracture(13, 60.0); // lower leg
+    assert_eq!(open.parts[13].pain(), 60.0);
+    let mut splinted = open.clone();
+    splinted.apply_splint(13, 2.0);
+    assert_eq!(splinted.parts[13].pain(), 30.0, "a set bone hurts half as much");
+    for _ in 0..20_000 { open.update(1.0); splinted.update(1.0); }
+    assert!(open.parts[13].health < 100.0, "an unsplinted fracture keeps injuring the leg");
+    assert_eq!(splinted.parts[13].health, 100.0, "a splint stops the damage");
+    // Open heals at 5e-6 per tick, splinted at 5e-5 * factor = 1e-4. The unsplinted increments sit near the f32
+    // resolution at 60 (as in the original, which also uses floats), so only the order of magnitude is stable.
+    let (a, b) = (60.0 - open.parts[13].fracture_time, 60.0 - splinted.parts[13].fracture_time);
+    assert!(a > 0.0 && b > 10.0 * a, "{a} {b}");
+    splinted.remove_splint(13);
+    assert!(!splinted.parts[13].splint && splinted.parts[13].splint_factor == 0.0);
+    // It heals completely and never goes negative.
+    splinted.parts[13].fracture_time = 1.0e-9;
+    splinted.update(1.0);
+    assert_eq!(splinted.parts[13].fracture_time, 0.0);
+}
