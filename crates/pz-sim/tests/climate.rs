@@ -157,3 +157,49 @@ fn rain_comes_and_goes_with_a_front_and_blinds_zombies() {
     cl.world_age_hours += 6.0;
     assert_eq!(cl.rain(), 0.0, "the front has passed");
 }
+
+#[test]
+fn air_front_strength_follows_add_day_sample() {
+    use pz_sim::climate::AirFront;
+    let mut f = AirFront::of_type(1);
+    f.add_day_sample(-0.4); // wrong side: no strength
+    assert_eq!(f.strength, 0.0);
+    f.add_day_sample(0.4);
+    assert!((f.strength - 0.4).abs() < 1e-6);
+    f.add_day_sample(0.8);
+    assert!((f.strength - (0.8 * 0.75 + 0.8 * 0.25)).abs() < 1e-6);
+    f.add_day_sample(0.1);
+    // recent window holds {0.1, 0.8} -> 0.8; max 0.8
+    assert!((f.strength - 0.8).abs() < 1e-6);
+    let mut c = AirFront::of_type(-1);
+    c.add_day_sample(-0.5);
+    assert!((c.strength - 0.5).abs() < 1e-6);
+    // Type 0 (before any front is tracked) accepts samples of either sign, as in the original condition.
+    let mut z = AirFront::default();
+    z.add_day_sample(-0.9);
+    assert!((z.strength - 0.9).abs() < 1e-6);
+}
+
+#[test]
+fn rain_fronts_arrive_on_their_own_over_weeks() {
+    use pz_sim::climate::{Climate, Offsets, Seasons};
+    use pz_sim::{GameClock, TICK_HZ};
+    let mut clock = GameClock { hour: 6.0, day_seconds: 120.0, ..GameClock::default() };
+    let o = Offsets { a: 3100.0, b: 9000.0, c: -2000.0, d: -9000.0 };
+    let mut cl = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+    let (mut fronts, mut wet_ticks, mut max_rain) = (0, 0u32, 0.0f32);
+    let mut last = None;
+    // 120 game days at 120 s/day.
+    for _ in 0..(120.0 * 120.0 * TICK_HZ) as u32 {
+        clock.tick();
+        cl.advance(&mut clock);
+        if cl.period != last { if cl.period.is_some() { fronts += 1; } last = cl.period; }
+        let r = cl.rain();
+        if r > 0.0 { wet_ticks += 1; max_rain = max_rain.max(r); }
+        assert!((0.0..=1.0).contains(&r));
+    }
+    assert!(fronts >= 3, "expected several fronts in 120 days, got {fronts}");
+    assert!(wet_ticks > 0 && max_rain > 0.1, "wet {wet_ticks} max {max_rain}");
+    let dry_share = 1.0 - wet_ticks as f32 / (120.0 * 120.0 * TICK_HZ);
+    assert!(dry_share > 0.5, "most of the time it is dry: {dry_share}");
+}

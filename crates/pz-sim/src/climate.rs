@@ -197,12 +197,16 @@ pub struct Climate {
     pub world_age_hours: f64,
     /// The rain front in progress, if any.
     pub period: Option<RainPeriod>,
+    /// The air front currently tracked (`ClimateManager.currentFront`).
+    pub front: AirFront,
+    /// Fronts arrive by themselves when the air mass flips sign (`ClimateManager.updateValues`).
+    pub natural_fronts: bool,
     last_hour: f32,
 }
 
 impl Climate {
     pub fn new(seasons: Seasons, offsets: Offsets, year: i32, month: i32, day: i32, clock: &mut GameClock) -> Self {
-        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, period: None, last_hour: clock.hour };
+        let mut c = Climate { seasons, offsets, sandbox_rain: 3, year, month, day, world_age_hours: 0.0, period: None, front: AirFront::default(), natural_fronts: true, last_hour: clock.hour };
         c.start_day(clock);
         c
     }
@@ -227,7 +231,46 @@ impl Climate {
             if self.month > 11 { self.month = 0; self.year += 1; }
             self.start_day(clock);
         }
+        if self.natural_fronts && (clock.hour.floor() != self.last_hour.floor() || clock.hour < self.last_hour) {
+            self.hour_changed(clock);
+        }
         self.last_hour = clock.hour;
+    }
+
+    /// `ClimateManager.updateValues` on an hour change: when the air mass changes sign, the front that built up
+    /// during the previous air mass breaks as a weather period, and tracking starts over for the new sign.
+    fn hour_changed(&mut self, clock: &GameClock) {
+        let f = air_mass_frequency(self.sandbox_rain);
+        let air_type = if simplex(self.offsets.a, self.world_age_hours / f) < 0.0 { -1 } else { 1 };
+        if self.front.kind == air_type { return; }
+        if self.world_age_hours > 0.0 && !self.period.is_some_and(|p| !p.is_over(self.world_age_hours)) {
+            let midnight = self.world_age_hours - clock.hour as f64;
+            for i in 0..4 {
+                let age = midnight + 24.0 * (i as f64 - 3.0);
+                self.front.add_day_sample(simplex(self.offsets.a, (age.floor() + 12.0) / f) as f32);
+            }
+            self.begin_period(clock);
+        }
+        self.front = AirFront::of_type(air_type);
+    }
+
+    /// `WeatherPeriod.createWeatherPattern`, reduced to what the rain model needs: the reseed from the date and
+    /// offsets, the front's maximum duration (24-48 h x strength warm-to-cold, 12-24 h cold-to-warm) plus the
+    /// opening and closing stages at their mean length, and the rain threshold `0.35 - 0.2 x strength`.
+    /// The random draws are not in the original's exact order, so the length of a given front can differ.
+    fn begin_period(&mut self, _clock: &GameClock) {
+        let s = self.front.strength;
+        if s <= 0.0 { return; }
+        let seed = ((self.year - 1990).wrapping_mul(100000)) as i64
+            + (self.month.wrapping_mul(self.day).wrapping_mul(1234)) as i64
+            + ((self.year - 1990).wrapping_mul(self.month).wrapping_mul(10000)) as i64
+            + (((self.offsets.b as i32).wrapping_sub(self.offsets.a as i32)).wrapping_mul(self.day)) as i64;
+        let mut rng = JavaRandom::new(seed);
+        let _cloud_colour_roll = rng.next_float();
+        let (lo, hi) = if self.front.kind == 1 { (24.0, 48.0) } else { (12.0, 24.0) };
+        let max_duration = (lo + rng.next_float() * (hi - lo)) * s;
+        let duration = max_duration as f64 + 3.0 + 2.5 * s as f64;
+        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength: s, rain_threshold: 0.35 - s * 0.2 });
     }
 
     /// Current air mass (wind and temperature offset) at the clock's time.
@@ -277,5 +320,42 @@ impl Climate {
     /// Current rain intensity (feeds the zombies' vision penalty).
     pub fn rain(&self) -> f32 {
         self.period.map_or(0.0, |p| p.intensity(self.world_age_hours))
+    }
+}
+
+/// `ClimateManager.AirFront`: tracks the strength of the front that builds up while one air mass (warm = 1,
+/// cold = -1) dominates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AirFront {
+    pub kind: i32,
+    pub strength: f32,
+    max_noise: f32,
+    cache: [f32; 2],
+}
+
+impl Default for AirFront {
+    fn default() -> Self { AirFront { kind: 0, strength: 0.0, max_noise: 0.0, cache: [-1.0; 2] } }
+}
+
+impl AirFront {
+    pub fn of_type(kind: i32) -> Self { AirFront { kind, ..Default::default() } }
+
+    /// `AirFront.addDaySample`: only samples on the front's own side count; the strength blends the strongest
+    /// recent sample (75%) with the strongest ever (25%).
+    pub fn add_day_sample(&mut self, noise: f32) {
+        if (self.kind != 1 || noise > 0.0) && (self.kind != -1 || noise < 0.0) {
+            let abs = noise.abs();
+            if abs > self.max_noise { self.max_noise = abs; }
+            let mut recent = 0.0f32;
+            for i in (0..self.cache.len()).rev() {
+                if self.cache[i] > recent { recent = self.cache[i]; }
+                if i < self.cache.len() - 1 { self.cache[i + 1] = self.cache[i]; }
+            }
+            self.cache[0] = abs;
+            if abs > recent { recent = abs; }
+            self.strength = recent * 0.75 + self.max_noise * 0.25;
+        } else {
+            self.strength = 0.0;
+        }
     }
 }
