@@ -225,12 +225,18 @@ impl Weapon {
     pub const FISTS: Weapon = Weapon { damage: 0.5, range: 1.0, cooldown_ticks: 30, crit_chance: 0.0, crit_mult: 1.0, push_back_mod: 1.0, small_blade: false, sound_radius: 0.0, sound_volume: 0.0 };
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpeedType { Sprinter, FastShambler, Shambler }
+
 #[derive(Clone)]
 pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: u32, pub hit_time: u32, pub stagger: u32, pub on_floor: bool, pub knocked_down: bool, path: Vec<(i32, i32)>, stuck: u32, pub reanimate_timer: f32, pub facing: [f32; 2], idle_timer: f32, wander: Option<[f32; 2]>, rng: u32,
     /// Per-zombie sight setting (sandbox `lore.sight`).
     pub sight: Sight,
     /// Crawler: `IsoZombie.doCrawlerSpeed` speedMod (0.3 + 0..0.15) instead of a shambler's (about 0.625).
     crawl_mod: Option<f32>,
+    /// speedMod of a walking zombie (see [`Zombie::roll_speed`]); 0.625 is the average shambler.
+    speed_mod: f32,
+    speed_type: SpeedType,
     /// Climbing a window or fence: ticks left and the square being climbed to.
     climb: Option<(u32, (i32, i32))>,
     /// ZombieEatBodyState: ticks of feeding left, and whether this zombie has had its fill of the current body.
@@ -239,9 +245,25 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, climb: None, eating: None, fed: false };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, fed: false };
         zb.idle_timer = zb.pick_wander_interval();
         zb
+    }
+
+    pub fn speed_type(&self) -> SpeedType { self.speed_type }
+
+    /// `IsoZombie.doZombieSpeedInternal` for a fresh zombie: `setting` is sandbox `lore.speed` (1 sprinters,
+    /// 2 fast shamblers, 3 shamblers, 4 random) and `sprinter_percent` is `lore.sprinterPercentage`.
+    /// Crawlers keep their own speed. Draw order follows the original.
+    pub fn roll_speed(&mut self, setting: u8, sprinter_percent: u32) {
+        let mut kind = setting as u32;
+        if kind == 4 { kind = if self.rand(100) < sprinter_percent { 1 } else { self.rand(2) + 2 }; }
+        if self.crawl_mod.is_some() { return; }
+        let jitter = |z: &mut Self| z.rand(1500) as f32 / 10000.0;
+        if kind == 3 { self.speed_type = SpeedType::Shambler; self.speed_mod = 0.55 + jitter(self); }
+        else if self.rand(3) != 0 { self.speed_mod = 0.55 + jitter(self); self.speed_type = SpeedType::Shambler; }
+        else if kind == 2 { self.speed_type = SpeedType::FastShambler; self.speed_mod = 0.85 + jitter(self); }
+        else { self.speed_type = SpeedType::Sprinter; self.speed_mod = 0.85 + jitter(self); }
     }
 
     pub fn is_crawler(&self) -> bool { self.crawl_mod.is_some() }
@@ -252,7 +274,7 @@ impl Zombie {
     }
 
     /// Walking speed in tiles/second; `ZOMBIE_SPEED` is calibrated to an average shambler (speedMod 0.625).
-    fn speed(&self) -> f32 { ZOMBIE_SPEED * self.crawl_mod.map_or(1.0, |m| m / 0.625) }
+    fn speed(&self) -> f32 { ZOMBIE_SPEED * self.crawl_mod.unwrap_or(self.speed_mod) / 0.625 }
 
     /// IsoZombie.Hit -> IsoGameCharacter.Hit/processHitDamage/hitConsequences for a player's melee hit
     /// (default traits: Strength 5 so shovingMod 1.0, full endurance). Returns the damage dealt.

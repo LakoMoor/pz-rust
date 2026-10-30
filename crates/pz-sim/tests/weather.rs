@@ -95,3 +95,36 @@ fn endless_day_and_night_pin_the_light() {
     assert_eq!(at(2.0, DayNight::EndlessDay).weather(0.0, 0.0).vision_radius(), 20.0);
     assert!(at(2.0, DayNight::Normal).night_strength() > 0.99);
 }
+
+#[test]
+fn sandbox_speed_setting_decides_how_many_zombies_run() {
+    use pz_world::World;
+    let census = |setting, pct| {
+        let mut n = [0u32; 3];
+        let mut zs = Vec::new();
+        for i in 0..3000 {
+            let mut z = Zombie::new(i as f32 * 1.7, (i * 7 % 13) as f32, 0);
+            z.roll_speed(setting, pct);
+            n[match z.speed_type() { SpeedType::Sprinter => 0, SpeedType::FastShambler => 1, SpeedType::Shambler => 2 }] += 1;
+            zs.push(z);
+        }
+        (n, zs)
+    };
+    // Shamblers only.
+    assert_eq!(census(3, 0).0, [0, 0, 3000]);
+    // Sprinters setting: a third of the zombies "run" (the original rolls Rand.Next(3) == 0 for the fast kind).
+    let (n, _) = census(1, 0);
+    assert!(n[0] > 800 && n[0] < 1200 && n[1] == 0, "{n:?}");
+    // Random with 100% sprinters: same as setting 1; with 0% only fast shamblers/shamblers.
+    assert_eq!(census(4, 0).0[0], 0);
+    assert!(census(4, 100).0[0] > 800);
+    // Fast ones really outrun the average walker.
+    let mut w = World::new(std::path::PathBuf::from("."));
+    let mut p = Player::new(15.0, 0.0);
+    let (_, zs) = census(1, 0);
+    let mut fast = zs.into_iter().find(|z| z.speed_type() == SpeedType::Sprinter).unwrap();
+    fast.pos = [0.0, 0.0];
+    let mut slow = Zombie::new(0.0, 0.0, 0);
+    for _ in 0..60 { fast.tick(&mut p, &mut w); slow.tick(&mut p, &mut w); }
+    assert!(fast.pos[0] > slow.pos[0] * 1.3, "{} vs {}", fast.pos[0], slow.pos[0]);
+}
