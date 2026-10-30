@@ -308,10 +308,12 @@ fn the_real_apply_bandage_action_wraps_a_wound_and_uses_up_the_bandage() {
     player.borrow_mut().body.cut(7, 0.0, 0.0); // torso: bleeding cut
     let rt = Runtime::new().unwrap();
     rt.bind_player(player.clone()).unwrap();
-    rt.bind_inventory(db, inv.clone()).unwrap();
+    rt.bind_inventory(db.clone(), inv.clone()).unwrap();
     rt.add_lua_root(&dir.join("shared")).unwrap();
     rt.lua.load("ISTimedActionQueue = { getTimedActionQueue = function() return { onCompleted = function() end, resetQueue = function() end } end }").exec().unwrap();
     rt.run_file(&dir.join("shared/TimedActions/ISApplyBandage.lua")).unwrap();
+    let power = db.get("Base.Bandage").unwrap().bandage_power;
+    assert!(power > 0.0, "the real bandage has a BandagePower");
     let before = player.borrow().body.parts[7].pain();
     rt.lua.load(r#"
         local p = getPlayer()
@@ -327,7 +329,8 @@ fn the_real_apply_bandage_action_wraps_a_wound_and_uses_up_the_bandage() {
     assert!(!player.borrow().body.parts[7].bandaged, "not finished yet");
     for _ in 0..3 { rt.tick_actions(1.0).unwrap(); }
     let after = player.borrow().body.parts[7].clone();
-    assert!(after.bandaged && after.bandage_life > 0.0 && after.bandage_life <= 1.0, "{after:?}");
+    // Life = ZombRandFloat(0.5, 1.0) at doctor level 0, plus the bandage item's own power.
+    assert!(after.bandaged && after.bandage_life >= 0.5 + power && after.bandage_life <= 1.0 + power, "{after:?} power {power}");
     assert_eq!(inv.borrow().count("Base.Bandage"), 0, "bandage used up");
     assert!(after.pain() < before, "wrapped wound hurts less");
 }

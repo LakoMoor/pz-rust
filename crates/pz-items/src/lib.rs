@@ -30,6 +30,8 @@ pub struct ItemDef {
     pub max_ammo: f32,
     /// `Categories` contains `base:smallblade` (such weapons never stagger zombies).
     pub small_blade: bool,
+    /// `BandagePower`: extra bandage life added when this item is applied as a bandage.
+    pub bandage_power: f32,
     /// `Tags = base:a;base:b`
     pub tags: Vec<String>,
 }
@@ -63,6 +65,7 @@ fn def(module: &str, b: &Block) -> ItemDef {
         sound_volume: b.prop("SoundVolume").and_then(|v| v.parse().ok()).unwrap_or(0.0),
         push_back_mod: b.prop("PushBackMod").and_then(|v| v.parse().ok()).unwrap_or(1.0),
         tags: b.prop("Tags").map(|t| t.split(";").map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
+        bandage_power: num(b, "BandagePower"),
         small_blade: b.prop("Categories").is_some_and(|c| c.contains("smallblade")),
     }
 }

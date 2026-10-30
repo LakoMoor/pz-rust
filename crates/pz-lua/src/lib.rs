@@ -200,7 +200,7 @@ fn item_table(lua: &Lua, def: &ItemDef) -> Result<mlua::Table> {
     };
     let module = id.split_once('.').map_or("Base".to_string(), |(m, _)| m.to_string());
     getter("getModule", mlua::Value::String(lua.create_string(&module)?))?;
-    getter("getBandagePower", mlua::Value::Number(0.0))?;
+    getter("getBandagePower", mlua::Value::Number(def.bandage_power as f64))?;
     getter("isAlcoholic", mlua::Value::Boolean(false))?;
     getter("isInfected", mlua::Value::Boolean(false))?;
     getter("setJobDelta", mlua::Value::Nil)?;
