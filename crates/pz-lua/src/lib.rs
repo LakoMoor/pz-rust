@@ -306,3 +306,45 @@ impl Runtime {
         lua.globals().set("getCell", lua.create_function(move |_, ()| Ok(c2.clone()))?)
     }
 }
+
+fn full_id(t: &str) -> String { if t.contains('.') { t.to_string() } else { format!("Base.{t}") } }
+
+impl Runtime {
+    /// `getPlayer():getInventory()`: `AddItem(type)`, `contains(type)`, `getItemCount(type)`,
+    /// `RemoveOneOf(type)`, `getCapacityWeight()`. `AddItem` returns the new item, or nil when the item is
+    /// unknown or would exceed the carry limit (the original adds it regardless and lets encumbrance penalise).
+    /// Call after [`Runtime::bind_player`].
+    pub fn bind_inventory(&self, db: Arc<ItemDb>, inv: Rc<RefCell<pz_items::Inventory>>) -> Result<()> {
+        let lua = &self.lua;
+        let player: mlua::Table = lua.globals().get::<mlua::Function>("getPlayer")?.call(())?;
+        let t = lua.create_table()?;
+        {
+            let (db, inv) = (db.clone(), inv.clone());
+            t.set("AddItem", lua.create_function(move |lua, (_this, ty): (mlua::Value, String)| {
+                let id = full_id(&ty);
+                if inv.borrow_mut().add(&db, &id, 1).is_err() { return Ok(mlua::Value::Nil); }
+                match db.get(&id) { Some(def) => item_table(lua, def).map(mlua::Value::Table), None => Ok(mlua::Value::Nil) }
+            })?)?;
+        }
+        {
+            let inv = inv.clone();
+            let count = lua.create_function(move |_, (_this, ty): (mlua::Value, String)| Ok(inv.borrow().count(&full_id(&ty)) as i64))?;
+            t.set("getItemCount", count.clone())?;
+            t.set("getCountType", count)?;
+        }
+        {
+            let inv = inv.clone();
+            t.set("contains", lua.create_function(move |_, (_this, ty): (mlua::Value, String)| Ok(inv.borrow().count(&full_id(&ty)) > 0))?)?;
+        }
+        {
+            let (db, inv) = (db.clone(), inv.clone());
+            t.set("RemoveOneOf", lua.create_function(move |_, (_this, ty): (mlua::Value, String)| Ok(inv.borrow_mut().remove(&db, &full_id(&ty), 1) > 0))?)?;
+        }
+        {
+            let inv = inv.clone();
+            t.set("getCapacityWeight", lua.create_function(move |_, _: mlua::MultiValue| Ok(inv.borrow().weight() as f64))?)?;
+        }
+        let t2 = t.clone();
+        player.set("getInventory", lua.create_function(move |_, _: mlua::MultiValue| Ok(t2.clone()))?)
+    }
+}

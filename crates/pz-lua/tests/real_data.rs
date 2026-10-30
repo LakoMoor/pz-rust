@@ -1,4 +1,5 @@
 use pz_lua::Runtime;
+use std::sync::Arc;
 use std::path::PathBuf;
 
 fn lua_dir() -> Option<PathBuf> {
@@ -221,4 +222,27 @@ fn the_real_action_queue_chains_actions_one_after_another() {
     rt.lua.load("ISTimedActionQueue.clear(player)").exec().unwrap();
     let left: bool = rt.lua.load("return #ISTimedActionQueue.getTimedActionQueue(player).queue == 0 and player:getCharacterActions():isEmpty()").eval().unwrap();
     assert!(left);
+}
+
+#[test]
+fn scripts_use_the_players_inventory() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let db = Arc::new(pz_items::ItemDb::load(&dir.parent().unwrap().join("scripts")).unwrap());
+    let inv = Rc::new(RefCell::new(pz_items::Inventory::player()));
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)))).unwrap();
+    rt.bind_inventory(db.clone(), inv.clone()).unwrap();
+    let (has_before, n, has_after, gone, unknown, weight): (bool, i64, bool, bool, bool, f64) = rt.lua.load(r#"
+        local inv = getPlayer():getInventory()
+        local before = inv:contains("Axe")
+        inv:AddItem("Base.Bullets9mm"); inv:AddItem("Bullets9mm"); inv:AddItem("Axe")
+        local n = inv:getItemCount("Bullets9mm")
+        local after = inv:contains("Base.Axe")
+        inv:RemoveOneOf("Axe")
+        return before, n, after, not inv:contains("Axe"), inv:AddItem("Base.NoSuchThing") == nil, inv:getCapacityWeight()
+    "#).eval().unwrap();
+    assert_eq!((has_before, n, has_after, gone, unknown), (false, 2, true, true, true));
+    assert_eq!(inv.borrow().count("Base.Bullets9mm"), 2);
+    assert!((weight - inv.borrow().weight() as f64).abs() < 1e-6);
 }
