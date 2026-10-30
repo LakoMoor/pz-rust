@@ -241,13 +241,25 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     climb: Option<(u32, (i32, i32))>,
     /// ZombieEatBodyState: ticks of feeding left, and whether this zombie has had its fill of the current body.
     eating: Option<u32>,
+    /// FakeDeadZombieState: lying motionless, invisible to the AI until someone steps close.
+    fake_dead: bool,
     fed: bool }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, fed: false };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, fake_dead: false, fed: false };
         zb.idle_timer = zb.pick_wander_interval();
         zb
+    }
+
+    pub fn is_fake_dead(&self) -> bool { self.fake_dead }
+
+    /// `IsoZombie.setFakeDead(true)`: drop to the floor and play dead; half of them will rise as crawlers.
+    pub fn play_dead(&mut self) {
+        self.fake_dead = true;
+        self.on_floor = false;
+        self.path.clear();
+        if self.rand(2) == 0 { self.set_crawler(); }
     }
 
     pub fn speed_type(&self) -> SpeedType { self.speed_type }
@@ -344,6 +356,13 @@ impl Zombie {
                 if left <= 1 { self.pos = [dest.0 as f32, dest.1 as f32]; self.climb = None; } else { self.climb = Some((left - 1, dest)); }
                 return;
             }
+        }
+        if self.fake_dead {
+            // Wakes (FakeDeadAttackState) when a living player on the same level is within 1.3 tiles.
+            let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
+            if target.z == self.z && target.health > 0.0 && d[0].hypot(d[1]) < 1.3 { self.fake_dead = false; self.facing = [d[0], d[1]]; }
+            else if self.health <= 0.0 { self.fake_dead = false; }
+            else { return; }
         }
         if self.on_floor {
             // ZombieOnGroundState: lie there until the reanimate timer runs out, then get up.

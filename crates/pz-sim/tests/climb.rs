@@ -61,3 +61,23 @@ fn crawlers_do_not_climb() {
     for _ in 0..(10 * TICK_HZ as u32) { z.tick(&mut player, &mut w); }
     assert!(!z.is_climbing() && z.pos[0] < b.0 as f32 - 0.4, "crawler crossed to {:?}", z.pos);
 }
+
+#[test]
+fn a_zombie_playing_dead_ignores_distant_players_and_springs_when_stepped_on() {
+    use pz_world::World;
+    let mut w = World::new(std::path::PathBuf::from("."));
+    let mut z = Zombie::new(0.0, 0.0, 0);
+    z.play_dead();
+    assert!(z.is_fake_dead());
+    let mut far = Player::new(5.0, 0.0);
+    for _ in 0..60 { z.tick(&mut far, &mut w); }
+    assert!(z.is_fake_dead() && z.pos == [0.0, 0.0], "should lie still while the player is 5 tiles away");
+    let mut near = Player::new(1.0, 0.0);
+    z.tick(&mut near, &mut w);
+    assert!(!z.is_fake_dead());
+    for _ in 0..90 { z.tick(&mut near, &mut w); }
+    assert!(near.health < 100.0, "the ambusher should have hurt the player");
+    // About half of the corpses turn out to be crawlers.
+    let crawlers = (0..400).filter(|i| { let mut z = Zombie::new(*i as f32 * 3.1, 1.0, 0); z.play_dead(); z.is_crawler() }).count();
+    assert!((140..260).contains(&crawlers), "{crawlers}");
+}
