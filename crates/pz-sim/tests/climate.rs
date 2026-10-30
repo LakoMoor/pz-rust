@@ -327,3 +327,15 @@ fn wind_chill_never_exceeds_air_temperature_and_humidity_is_a_fraction() {
         assert!(w <= t + 1e-4 && (0.0..=1.0).contains(&hu), "t {t} w {w} hu {hu}");
     }
 }
+
+#[test]
+fn indoor_air_is_pulled_toward_22_degrees() {
+    use pz_sim::climate::*;
+    let mut clock = pz_sim::GameClock::default();
+    let o = Offsets { a: 1.0, b: 2.0, c: -1.0, d: -2.0 };
+    let c = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+    let out = c.temperature(&clock);
+    let inside = c.indoor_temperature(&clock, 0, false);
+    assert!((inside - 22.0).abs() < (out - 22.0).abs() || out == 22.0, "out {out} in {inside}");
+    assert_eq!(c.indoor_temperature(&clock, 0, true), 22.0);
+}

@@ -417,6 +417,26 @@ impl Climate {
         base + 1.0 - (5.0 * (1.0 - day_lagged) + 5.0 * night_lagged)
     }
 
+    /// Air temperature inside a building (`ClimateManager.getAirTemperatureForSquare`, no vehicle or heat source):
+    /// the outdoor value pulled toward 22 degrees by 40-60% (ground floor, by daylight lag) and held at 22 while
+    /// the grid has power. `z` is the floor.
+    pub fn indoor_temperature(&self, clock: &GameClock, z: i32, electricity: bool) -> f32 {
+        if electricity { return 22.0; }
+        let temp = self.temperature(clock);
+        let mut dd = clock.dusk + 4.0;
+        if dd >= 24.0 { dd -= 24.0; }
+        let day = crate::time_lerp_hours(clock.hour, clock.dawn + 4.0, dd);
+        let night = crate::time_lerp_hours(clock.hour, dd, clock.dawn + 4.0);
+        if temp <= 22.0 {
+            let mod_ = 22.0 - temp;
+            let mod_ = if z < 1 { mod_ } else { mod_ * 0.85 };
+            temp + mod_ * (0.4 + 0.2 * day)
+        } else {
+            let mod_ = temp - 22.0;
+            if z < 1 { temp - mod_ * 0.85 * (0.4 + 0.2 * day) } else { temp - mod_ * (0.4 + 0.2 * day + 0.2 * night) }
+        }
+    }
+
     /// Relative humidity 0..1 (`ClimateValues.humidity`): the humidity noise, damped when the air is cold.
     pub fn humidity(&self, clock: &GameClock) -> f32 {
         let noise = (1.0 + self.air(clock).humidity_noise) * 0.5;
