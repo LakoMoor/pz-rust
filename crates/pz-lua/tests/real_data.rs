@@ -297,3 +297,37 @@ fn script_pain_comes_from_the_wounds() {
     let pain: f64 = rt.lua.load("return getPlayer():getBodyDamage():getBodyPart(2):getPain()").eval().unwrap();
     assert!((pain - 17.0).abs() < 1e-4);
 }
+
+#[test]
+fn the_real_apply_bandage_action_wraps_a_wound_and_uses_up_the_bandage() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let db = Arc::new(pz_items::ItemDb::load(&dir.parent().unwrap().join("scripts")).unwrap());
+    let inv = Rc::new(RefCell::new(pz_items::Inventory::player()));
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    player.borrow_mut().body.cut(7, 0.0, 0.0); // torso: bleeding cut
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(player.clone()).unwrap();
+    rt.bind_inventory(db, inv.clone()).unwrap();
+    rt.add_lua_root(&dir.join("shared")).unwrap();
+    rt.lua.load("ISTimedActionQueue = { getTimedActionQueue = function() return { onCompleted = function() end, resetQueue = function() end } end }").exec().unwrap();
+    rt.run_file(&dir.join("shared/TimedActions/ISApplyBandage.lua")).unwrap();
+    let before = player.borrow().body.parts[7].pain();
+    rt.lua.load(r#"
+        local p = getPlayer()
+        local bandage = p:getInventory():AddItem("Base.Bandage")
+        local part = p:getBodyDamage():getBodyPart(7)
+        action = ISApplyBandage:new(p, p, bandage, part, true)
+        action.adjustMaxTime = function(_, t) return t end
+        action:begin()
+    "#).exec().unwrap();
+    assert_eq!(inv.borrow().count("Base.Bandage"), 1);
+    // 120 ticks at doctor level 0; the bandage is consumed and the part wrapped when it completes.
+    for _ in 0..119 { rt.tick_actions(1.0).unwrap(); }
+    assert!(!player.borrow().body.parts[7].bandaged, "not finished yet");
+    for _ in 0..3 { rt.tick_actions(1.0).unwrap(); }
+    let after = player.borrow().body.parts[7].clone();
+    assert!(after.bandaged && after.bandage_life > 0.0 && after.bandage_life <= 1.0, "{after:?}");
+    assert_eq!(inv.borrow().count("Base.Bandage"), 0, "bandage used up");
+    assert!(after.pain() < before, "wrapped wound hurts less");
+}

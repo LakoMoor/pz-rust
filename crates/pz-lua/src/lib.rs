@@ -108,6 +108,24 @@ BodyPartType = { Hand_L = 0, Hand_R = 1, ForeArm_L = 2, ForeArm_R = 3, UpperArm_
 function BodyPartType.ToIndex(i) return i end
 function BodyPartType.FromIndex(i) return i end
 
+-- Health-panel / engine globals used by the first-aid actions.
+function isClient() return false end
+function isServer() return false end
+function addXp() end
+function syncBodyPart() end
+function syncPlayerStats() end
+function ZombRandFloat(lo, hi) return lo + math.random() * (hi - lo) end
+Perks = setmetatable({}, { __index = function(_, k) return k end })
+Metabolics = setmetatable({}, { __index = function(_, k) return k end })
+CharacterActionAnims = setmetatable({}, { __index = function(_, k) return k end })
+CharacterTrait = setmetatable({}, { __index = function(_, k) return k end })
+ItemTag = setmetatable({}, { __index = function(_, k) return k end })
+ISHealthPanel = {
+    DidPatientMove = function() return false end,
+    setBodyPartActionForPlayer = function() end,
+    getBandageType = function() return nil end,
+}
+
 function __startAction(chr, act)
     chr.__actions = { act }
     if act:valid() then act:waitToStart() end
@@ -180,6 +198,13 @@ fn item_table(lua: &Lua, def: &ItemDef) -> Result<mlua::Table> {
         let f = lua.create_function(move |_, _: mlua::MultiValue| Ok(v.clone()))?;
         t.set(name, f)
     };
+    let module = id.split_once('.').map_or("Base".to_string(), |(m, _)| m.to_string());
+    getter("getModule", mlua::Value::String(lua.create_string(&module)?))?;
+    getter("getBandagePower", mlua::Value::Number(0.0))?;
+    getter("isAlcoholic", mlua::Value::Boolean(false))?;
+    getter("isInfected", mlua::Value::Boolean(false))?;
+    getter("setJobDelta", mlua::Value::Nil)?;
+    getter("setJobType", mlua::Value::Nil)?;
     getter("getFullType", mlua::Value::String(lua.create_string(&id)?))?;
     getter("getName", mlua::Value::String(lua.create_string(&short)?))?;
     getter("getType", mlua::Value::String(lua.create_string(&short)?))?;
@@ -267,7 +292,15 @@ impl Runtime {
             function body:getBodyPart(i)
                 local info = __bodyPart(i)
                 if not info then return nil end
-                return { getPain = function() return info.pain + (chr.__pain[i] or 0) end,
+                return { getIndex = function() return i end,
+                         getBleedingTime = function() return info.bleedingTime end,
+                         getBandageLife = function() return info.bandageLife end,
+                         HasInjury = function() return info.bleeding or info.scratched or info.cut or info.bitten end,
+                         isGetBandageXp = function() return true end,
+                         getBandageType = function() return nil end,
+                         manipulatingUsername = function() return nil end,
+                         setManipulatingUsername = function() end,
+                         getPain = function() return info.pain + (chr.__pain[i] or 0) end,
                          getHealth = function() return info.health end,
                          bleeding = function() return info.bleeding end,
                          scratched = function() return info.scratched end,
@@ -275,9 +308,24 @@ impl Runtime {
                          bitten = function() return info.bitten end,
                          bandaged = function() return info.bandaged end }
             end
+            function body:SetBandaged(i, on, life) __setBandaged(i, on, life) end
             function body:getOverallBodyHealth() return __bodyOverall() end
             function body:getNumPartsBleeding() return __bodyBleeding() end
             function chr:getTimedActionTimeModifier() return 1.0 end
+            function chr:faceThisObject() end
+            function chr:shouldBeTurning() return false end
+            function chr:isSeatedInVehicle() return false end
+            function chr:setMetabolicTarget() end
+            function chr:playSound() return nil end
+            function chr:playerVoiceSound() return nil end
+            function chr:stopOrTriggerSound() end
+            function chr:reportEvent() end
+            function chr:SetVariable() end
+            function chr:getPerkLevel() return self.__doctor or 0 end
+            function chr:getUsername() return "player" end
+            function chr:hasTrait() return false end
+            function chr:isTimedActionInstant() return false end
+            function chr:getEmitter() return { isPlaying = function() return false end } end
             function chr:isAsleep() return false end
             function chr:isFarming() return self.__farming == true end
             function chr:isDraggingCorpse() return false end
@@ -303,7 +351,17 @@ impl Runtime {
                 t.set("bitten", b.bite_time > 0.0)?;
                 t.set("bandaged", b.bandaged)?;
                 t.set("pain", b.pain() as f64)?;
+                t.set("bleedingTime", b.bleeding_time as f64)?;
+                t.set("bandageLife", b.bandage_life as f64)?;
                 Ok(mlua::Value::Table(t))
+            })?)?;
+            let p = player.clone();
+            lua.globals().set("__setBandaged", lua.create_function(move |_, (i, on, life): (usize, bool, f64)| {
+                let mut pl = p.borrow_mut();
+                if i < pz_sim::body::PARTS {
+                    if on { pl.body.apply_bandage(i, life as f32) } else { pl.body.remove_bandage(i) }
+                }
+                Ok(())
             })?)?;
             let p = player.clone();
             lua.globals().set("__bodyOverall", lua.create_function(move |_, ()| Ok(p.borrow().body.overall_health() as f64))?)?;
@@ -356,6 +414,15 @@ impl Runtime {
     }
 }
 
+/// An item argument: a type name, or an item object (anything with `getFullType`).
+fn item_arg(v: &mlua::Value) -> Option<String> {
+    match v {
+        mlua::Value::String(s) => s.to_str().ok().map(|s| full_id(&s)),
+        mlua::Value::Table(t) => t.get::<mlua::Function>("getFullType").ok()?.call::<String>(t.clone()).ok(),
+        _ => None,
+    }
+}
+
 fn full_id(t: &str) -> String { if t.contains('.') { t.to_string() } else { format!("Base.{t}") } }
 
 impl Runtime {
@@ -383,11 +450,13 @@ impl Runtime {
         }
         {
             let inv = inv.clone();
-            t.set("contains", lua.create_function(move |_, (_this, ty): (mlua::Value, String)| Ok(inv.borrow().count(&full_id(&ty)) > 0))?)?;
+            t.set("contains", lua.create_function(move |_, (_this, v): (mlua::Value, mlua::Value)| Ok(item_arg(&v).is_some_and(|id| inv.borrow().count(&id) > 0)))?)?;
         }
         {
             let (db, inv) = (db.clone(), inv.clone());
-            t.set("RemoveOneOf", lua.create_function(move |_, (_this, ty): (mlua::Value, String)| Ok(inv.borrow_mut().remove(&db, &full_id(&ty), 1) > 0))?)?;
+            let remove = lua.create_function(move |_, (_this, v): (mlua::Value, mlua::Value)| Ok(item_arg(&v).is_some_and(|id| inv.borrow_mut().remove(&db, &id, 1) > 0)))?;
+            t.set("RemoveOneOf", remove.clone())?;
+            t.set("Remove", remove)?;
         }
         {
             let inv = inv.clone();
