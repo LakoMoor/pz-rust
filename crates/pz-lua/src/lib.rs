@@ -40,7 +40,7 @@ LuaTimedActionNew = {}
 LuaTimedActionNew.__index = LuaTimedActionNew
 function LuaTimedActionNew.new(t, chr)
     local a = setmetatable({ table = t, chr = chr, currentTime = -2, maxTime = t.maxTime, delta = 0,
-        started = false, forceStop = false, forceComplete = false, loopAction = t.loopedAction or false }, LuaTimedActionNew)
+        lastTime = -1, prevLastTime = 0, started = false, forceStop = false, forceComplete = false, loopAction = t.loopedAction or false }, LuaTimedActionNew)
     return a
 end
 local function call(a, name)
@@ -72,14 +72,34 @@ function LuaTimedActionNew:waitToStart()
     end
 end
 function LuaTimedActionNew:update(mult)
+    self.prevLastTime, self.lastTime = self.lastTime, self.currentTime
     self.currentTime = self.currentTime + mult
     if self.currentTime < 0 then self.currentTime = 0 end
     if self.maxTime == 0 then self.delta = 0 elseif self.maxTime ~= -1 then self.delta = math.min(self.currentTime / self.maxTime, 1) end
     call(self, "update")
 end
+function LuaTimedActionNew:hasStalled()
+    if not self.started then return false end
+    return (self.lastTime == self.currentTime and self.lastTime == self.prevLastTime and self.lastTime < 0) or self.currentTime < 0
+end
+function LuaTimedActionNew:getTable() return self.table end
 function LuaTimedActionNew:stop() call(self, "stop") end
 function LuaTimedActionNew:perform() call(self, "perform") end
 function LuaTimedActionNew:complete() call(self, "complete") end
+
+-- Java-side names the queue script touches at load time and on every tick.
+function instanceof(o, name)
+    return type(o) == "table" and o.__classes ~= nil and o.__classes[name] == true
+end
+for _, n in ipairs({ "ClimbThroughWindowState", "ClimbOverFenceState", "ClimbOverWallState", "ClimbSheetRopeState",
+                     "ClimbDownSheetRopeState", "CloseWindowState", "OpenWindowState" }) do
+    local inst = {}
+    _G[n] = { instance = function() return inst end }
+end
+function table.wipe(t) for k in pairs(t) do t[k] = nil end return t end
+ISLogSystem = { logAction = function() end }
+HaloTextHelper = { addBadText = function() end }
+function getCore() return { getOptionTimedActionGameSpeedReset = function() return false end } end
 
 function __startAction(chr, act)
     chr.__actions = { act }
@@ -220,6 +240,27 @@ impl Runtime {
             let me = t.clone();
             t.set(setter, lua.create_function(move |_, (_this, v): (mlua::Value, mlua::Value)| me.set(field, v))?)?;
         }
+        lua.load(r#"
+            local chr = ...
+            chr.__classes = { IsoGameCharacter = true, IsoPlayer = true }
+            chr.__actions = {}
+            function chr:getCharacterActions()
+                local list = self.__actions
+                return { contains = function(_, a) for _, x in ipairs(list) do if x == a then return true end end return false end,
+                         isEmpty = function() return #list == 0 end }
+            end
+            function chr:getTimedActionToRetrigger() return self.__retrigger end
+            function chr:isAsleep() return false end
+            function chr:isFarming() return self.__farming == true end
+            function chr:isDraggingCorpse() return false end
+            function chr:isLocalPlayer() return true end
+            function chr:getCurrentState() return nil end
+            function chr:StopAllActionQueue()
+                local a = self.__actions[1]
+                if a then if a.started then a:stop() else local f = a.table.interruptWaitToStart; if f then f(a.table) end end end
+                self.__actions = {}
+            end
+        "#).call::<()>(t.clone())?;
         let start: mlua::Function = lua.globals().get("__startAction")?;
         let tt0 = t.clone();
         t.set("StartAction", lua.create_function(move |_, (_this, act): (mlua::Value, mlua::Value)| start.call::<()>((tt0.clone(), act)))?)?;

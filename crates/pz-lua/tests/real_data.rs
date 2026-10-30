@@ -184,3 +184,41 @@ fn a_real_timed_action_runs_through_start_update_perform() {
     let log: String = rt.lua.load(r#"return table.concat(log, ",")"#).eval().unwrap();
     assert_eq!(log, "start,update 0.01,update 0.02,stop");
 }
+
+#[test]
+fn the_real_action_queue_chains_actions_one_after_another() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)))).unwrap();
+    rt.add_lua_root(&dir.join("shared")).unwrap();
+    rt.run_file(&dir.join("shared/TimedActions/ISBaseTimedAction.lua")).unwrap();
+    rt.run_file(&dir.join("client/TimedActions/ISTimedActionQueue.lua")).unwrap();
+    rt.lua.load(r#"
+        log = {}
+        Step = ISBaseTimedAction:derive("Step")
+        function Step:isValid() return true end
+        function Step:adjustMaxTime(t) return t end
+        function Step:start() table.insert(log, self.name .. ":start") end
+        function Step:perform()
+            table.insert(log, self.name .. ":perform")
+            ISBaseTimedAction.perform(self)
+        end
+        function Step:new(chr, name, t) local o = ISBaseTimedAction.new(self, chr); o.name = name; o.maxTime = t; return o end
+        player = getPlayer()
+        ISTimedActionQueue.add(Step:new(player, "a", 2))
+        ISTimedActionQueue.add(Step:new(player, "b", 2))
+        assert(ISTimedActionQueue.hasActionType(player, "Step"))
+    "#).exec().unwrap();
+    for _ in 0..8 { rt.tick_actions(1.0).unwrap(); }
+    let log: String = rt.lua.load(r#"return table.concat(log, ",")"#).eval().unwrap();
+    assert_eq!(log, "a:start,a:perform,b:start,b:perform");
+    let empty: bool = rt.lua.load("return not ISTimedActionQueue.hasActionType(player, 'Step') and player:getCharacterActions():isEmpty()").eval().unwrap();
+    assert!(empty);
+    // Clearing cancels what is queued and stops the running action.
+    rt.lua.load(r#"log = {}; ISTimedActionQueue.add(Step:new(player, "c", 50)); ISTimedActionQueue.add(Step:new(player, "d", 5))"#).exec().unwrap();
+    rt.tick_actions(1.0).unwrap();
+    rt.lua.load("ISTimedActionQueue.clear(player)").exec().unwrap();
+    let left: bool = rt.lua.load("return #ISTimedActionQueue.getTimedActionQueue(player).queue == 0 and player:getCharacterActions():isEmpty()").eval().unwrap();
+    assert!(left);
+}
