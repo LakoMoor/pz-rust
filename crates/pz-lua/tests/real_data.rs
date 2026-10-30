@@ -80,3 +80,21 @@ fn scripts_can_look_up_item_definitions_from_the_real_item_scripts() {
     let missing: bool = rt.lua.load(r#"return getScriptManager():getItem("Base.NoSuchThing") == nil"#).eval().unwrap();
     assert!(missing);
 }
+
+#[test]
+fn scripts_see_the_live_player_state() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(10.4, -3.0)));
+    rt.bind_player(player.clone()).unwrap();
+    let read = |rt: &Runtime| -> (f64, f64, f64, bool) {
+        rt.lua.load("local p = getPlayer(); return p:getX(), p:getCurrentSquareX(), p:getBodyDamage():getHealth(), p:isDead()").eval().unwrap()
+    };
+    assert_eq!(read(&rt), (10.4f32 as f64, 10.0, 100.0, false));
+    // Simulation changes show up on the next call, no copying.
+    player.borrow_mut().health = 0.0;
+    player.borrow_mut().pos[0] = 11.6;
+    assert_eq!(read(&rt), (11.6f32 as f64, 12.0, 0.0, true));
+    let same: bool = rt.lua.load("return getSpecificPlayer(0) == getPlayer()").eval().unwrap();
+    assert!(same);
+}

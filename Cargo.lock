@@ -1592,6 +1592,7 @@ version = "0.1.0"
 dependencies = [
  "mlua",
  "pz-items",
+ "pz-sim",
 ]
 
 [[package]]

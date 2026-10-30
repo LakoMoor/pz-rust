@@ -4,6 +4,8 @@
 use mlua::{Lua, Result};
 use pz_items::{ItemDb, ItemDef};
 use std::path::Path;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Java-side globals the scripts rely on at load time. `Events.<Name>.Add(fn)` registers callbacks;
@@ -98,5 +100,37 @@ impl Runtime {
         let factory = lua.create_table()?;
         factory.set("CreateItem", lookup)?;
         lua.globals().set("InventoryItemFactory", factory)
+    }
+}
+
+impl Runtime {
+    /// `getPlayer()` / `getSpecificPlayer(0)` for the local player, reading live simulation state on each call.
+    pub fn bind_player(&self, player: Rc<RefCell<pz_sim::Player>>) -> Result<()> {
+        let lua = &self.lua;
+        let t = lua.create_table()?;
+        let num = |name: &str, f: fn(&pz_sim::Player) -> f64| -> Result<()> {
+            let p = player.clone();
+            t.set(name, lua.create_function(move |_, _: mlua::MultiValue| Ok(f(&p.borrow())))?)
+        };
+        num("getX", |p| p.pos[0] as f64)?;
+        num("getY", |p| p.pos[1] as f64)?;
+        num("getZ", |p| p.z as f64)?;
+        num("getCurrentSquareX", |p| pz_sim::square_of(p.pos).0 as f64)?;
+        num("getCurrentSquareY", |p| pz_sim::square_of(p.pos).1 as f64)?;
+        let p = player.clone();
+        t.set("isDead", lua.create_function(move |_, _: mlua::MultiValue| Ok(p.borrow().health <= 0.0))?)?;
+        let p = player.clone();
+        t.set("isAlive", lua.create_function(move |_, _: mlua::MultiValue| Ok(p.borrow().health > 0.0))?)?;
+        // BodyDamage is modelled as a single health pool here: 100 = unhurt.
+        let body = lua.create_table()?;
+        let p = player.clone();
+        body.set("getHealth", lua.create_function(move |_, _: mlua::MultiValue| Ok(p.borrow().health as f64))?)?;
+        let p = player.clone();
+        body.set("IsInfected", lua.create_function(move |_, _: mlua::MultiValue| Ok(p.borrow().infected))?)?;
+        t.set("getBodyDamage", lua.create_function(move |_, _: mlua::MultiValue| Ok(body.clone()))?)?;
+        let g = lua.globals();
+        let tt = t.clone();
+        g.set("getPlayer", lua.create_function(move |_, ()| Ok(tt.clone()))?)?;
+        g.set("getSpecificPlayer", lua.create_function(move |_, _: i32| Ok(t.clone()))?)
     }
 }

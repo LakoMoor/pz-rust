@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 mlua = { version = "0.10", features = ["lua51", "vendored"] }
 pz-items = { path = "../pz-items" }
+pz-sim = { path = "../pz-sim" }
