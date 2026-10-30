@@ -204,11 +204,14 @@ impl Server {
         }
         self.clock.tick();
         self.world_hours += 24.0 / (self.clock.day_seconds * pz_sim::TICK_HZ);
-        // Outdoor weather (players are treated as outdoors: indoor temperature is not ported yet).
+        // Weather: players inside a room feel the indoor air (grid power is not modelled, so no heating to 22).
         let air = self.climate.temperature(&self.clock);
         let air_wind = self.climate.wind_chill_temperature(&self.clock);
         let humidity = self.climate.humidity(&self.clock);
         for (id, p) in self.players.iter_mut() {
+            let (sx, sy) = pz_sim::square_of(p.pos);
+            let indoors = self.world.ensure(sx, sy) && self.world.column(sx, sy, p.z as usize).is_some_and(|c| c.room != -1);
+            let (air, air_wind) = if indoors { let t = self.climate.indoor_temperature(&self.clock, p.z as i32, false); (t, t) } else { (air, air_wind) };
             // Deterministic stand-in for Rand.Next: hash of tick and player id.
             let h = (self.tick as u32).wrapping_mul(2654435761) ^ (*id as u32).wrapping_mul(40503);
             let input = self.inputs.get(id).copied().unwrap_or_default();
