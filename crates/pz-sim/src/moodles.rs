@@ -40,3 +40,8 @@ pub fn hungry(hunger: f32, overall_health: f32) -> u8 {
 
 /// `MoodleType.THIRST`: from the thirst stat, thresholds 0.12 / 0.25 / 0.7 / 0.84.
 pub fn thirst(thirst: f32) -> u8 { ladder(thirst, [0.12, 0.25, 0.7, 0.84]) }
+
+/// `MoodleType.TIRED`: from the fatigue stat, thresholds 0.6 / 0.7 / 0.8 / 0.9.
+pub fn tired(fatigue: f32, overall_health: f32) -> u8 {
+    if overall_health == 0.0 { 0 } else { ladder(fatigue, [0.6, 0.7, 0.8, 0.9]) }
+}

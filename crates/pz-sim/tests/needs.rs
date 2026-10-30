@@ -22,13 +22,13 @@ fn hunger_and_thirst_grow_at_the_defines_lua_rates() {
 #[test]
 fn a_hungrier_character_gets_hungrier_more_slowly_and_everything_clamps() {
     let mut full = Needs::default();
-    let mut starving = Needs { hunger: 0.9, thirst: 0.0 };
+    let mut starving = Needs { hunger: 0.9, thirst: 0.0, ..Default::default() };
     full.tick(1.0, false, false);
     starving.tick(1.0, false, false);
     assert!(starving.hunger - 0.9 < full.hunger, "appetite factor (1 - hunger) slows the climb");
-    let mut maxed = Needs { hunger: 1.0, thirst: 1.0 };
+    let mut maxed = Needs { hunger: 1.0, thirst: 1.0, ..Default::default() };
     maxed.tick(1.0, false, false);
-    assert_eq!(maxed, Needs { hunger: 1.0, thirst: 1.0 });
+    assert_eq!((maxed.hunger, maxed.thirst), (1.0, 1.0));
 }
 
 #[test]
@@ -58,12 +58,31 @@ fn a_day_without_food_or_water_gets_a_character_into_trouble() {
 fn a_parched_character_slowly_loses_health() {
     use pz_sim::Player;
     let mut p = Player::new(0.0, 0.0);
-    p.needs = Needs { hunger: 0.0, thirst: 0.9 };
+    p.needs = Needs { hunger: 0.0, thirst: 0.9, ..Default::default() };
     for _ in 0..300 { p.tick_body(); }
     // 0.0165 / 10 per tick for the thirst moodle at max.
     assert!((100.0 - p.health - 300.0 * 0.0165 / 10.0).abs() < 0.2, "{}", p.health);
     let mut q = Player::new(0.0, 0.0);
-    q.needs = Needs { hunger: 0.0, thirst: 0.5 };
+    q.needs = Needs { hunger: 0.0, thirst: 0.5, ..Default::default() };
     for _ in 0..300 { q.tick_body(); }
     assert_eq!(q.health, 100.0, "moderate thirst costs no health");
+}
+
+#[test]
+fn fatigue_builds_while_awake_and_the_tired_moodle_follows() {
+    let mut n = Needs::default();
+    // Full endurance: floor of 0.3 on the multiplier.
+    n.tick(0.5, false, false);
+    assert!((n.fatigue - FATIGUE_INCREASE * 0.3 * 0.5).abs() < 1e-9);
+    // Less endurance means faster tiring; sleeping stops the climb.
+    let mut winded = Needs { endurance: 0.0, ..Default::default() };
+    winded.tick(0.5, false, false);
+    assert!(winded.fatigue > n.fatigue * 3.0);
+    let mut asleep = Needs::default();
+    asleep.tick(0.5, false, true);
+    assert_eq!(asleep.fatigue, 0.0);
+    assert_eq!(tired(0.6, 100.0), 0);
+    assert_eq!(tired(0.61, 100.0), 1);
+    assert_eq!(tired(0.95, 100.0), 4);
+    assert_eq!(tired(0.95, 0.0), 0);
 }
