@@ -36,3 +36,29 @@ fn how_many_shared_scripts_load_without_the_java_api() {
     eprintln!("compiled {ok}/{}", files.len());
     assert!(ok * 100 >= files.len() * 99, "{syntax} of {} shared scripts fail to compile under Lua 5.1", files.len());
 }
+
+#[test]
+fn class_hierarchy_and_events_work_with_the_games_isbaseobject() {
+    let Some(dir) = lua_dir() else { return };
+    let rt = Runtime::new().unwrap();
+    rt.run_file(&dir.join("shared/ISBaseObject.lua")).unwrap();
+    let ok: bool = rt.lua.load(r#"
+        Animal = ISBaseObject:derive("Animal")
+        Dog = Animal:derive("Dog")
+        local d = Dog:new()
+        return ISBaseObject:instanceof(d, "Animal") and ISBaseObject:instanceof(d, "Dog") and not ISBaseObject:instanceof(d, "Cat")
+    "#).eval().unwrap();
+    assert!(ok);
+    rt.lua.load(r#"
+        hits = {}
+        Events.OnTick.Add(function(n) table.insert(hits, n) end)
+        local f = function(n) table.insert(hits, -n) end
+        Events.OnTick.Add(f)
+        Events.OnTick.Remove(f)
+    "#).exec().unwrap();
+    rt.trigger("OnTick", 7).unwrap();
+    rt.trigger("OnTick", 8).unwrap();
+    rt.trigger("OnNeverRegistered", ()).unwrap();
+    let hits: Vec<i32> = rt.lua.globals().get::<mlua::Table>("hits").unwrap().sequence_values().map(|v| v.unwrap()).collect();
+    assert_eq!(hits, vec![7, 8]);
+}
