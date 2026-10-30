@@ -33,6 +33,8 @@ pub struct Player {
     pub health: f32,
     /// Set by a zombie bite (the game's infection mechanic; no cure in vanilla).
     pub infected: bool,
+    /// Wounds; bleeding and festering drain `health` through `tick_body`.
+    pub body: body::Body,
     /// Started the first time `tick_infection` sees `infected`.
     infection: Option<infection::Infection>,
     /// Unit vector of the last movement direction (swings go this way).
@@ -47,9 +49,16 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, infection: None, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::default(), infection: None, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
+    /// Advance wounds one tick: the drop in overall body health caused by bleeding and festering comes off `health`.
+    pub fn tick_body(&mut self) {
+        let before = self.body.overall_health();
+        self.body.update(1.0);
+        self.health = (self.health - (before - self.body.overall_health())).max(0.0);
+    }
+
     /// `BodyDamage.Update` infected branch: call once per tick with the world age in hours. `mortality` is
     /// the sandbox setting and `roll` a uniform [0,1) sample used when the infection starts.
     /// Returns true on the tick the infection kills.
@@ -65,6 +74,7 @@ impl Player {
     }
 
     pub fn tick(&mut self, input: Input, world: &mut World) {
+        self.tick_body();
         self.swing_cd = self.swing_cd.saturating_sub(1);
         let moved_from = self.pos;
         let len = (input.dir[0] * input.dir[0] + input.dir[1] * input.dir[1]).sqrt();
@@ -415,6 +425,13 @@ impl Zombie {
                 let hit = resolve_attack(AttackRolls { hit: r1, laceration: r2, bite: r3, dmg: r4, dmg_scale: r5 }, side, 1);
                 if hit.outcome != Outcome::Miss {
                     target.health = (target.health - hit.damage).max(0.0);
+                    // Wound a part (uniform here; the original weights by exposure) and leave it bleeding.
+                    let (part, w1, w2) = (self.rand(body::PARTS as u32) as usize, self.rand(1000) as f32 / 1000.0, self.rand(1000) as f32 / 1000.0);
+                    match hit.outcome {
+                        Outcome::Scratch => target.body.scratch(part, w1, w2),
+                        Outcome::Laceration => target.body.cut(part, w1, w2),
+                        _ => target.body.bite(part, w1, w2),
+                    }
                     if hit.outcome == Outcome::Bite { target.infected = true; }
                 }
                 self.cooldown = ATTACK_COOLDOWN;

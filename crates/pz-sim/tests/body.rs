@@ -60,3 +60,31 @@ fn wounds_hurt_their_own_part_unless_bandaged() {
     b.update(1.0);
     assert_eq!(b.parts[10].health, h);
 }
+
+#[test]
+fn a_zombie_scratch_leaves_a_bleeding_wound_that_keeps_costing_health() {
+    use pz_sim::*;
+    let mut p = Player::new(0.0, 0.0);
+    p.body.scratch(8, 0.5, 0.5); // head: scratch 11 -> bleeds 0.45 * 11 * 1.0
+    assert!((p.body.parts[8].bleeding_time - 4.95).abs() < 1e-3);
+    let start = p.health;
+    for _ in 0..600 { p.tick_body(); }
+    assert!(p.health < start, "bleeding costs health: {}", p.health);
+    // Scratches and cuts also hurt directly; a bite lasts far longer.
+    let mut q = Player::new(0.0, 0.0);
+    q.body.bite(7, 0.0, 0.0);
+    assert_eq!(q.body.parts[7].bite_time, 50.0);
+    assert!((q.body.parts[7].bleeding_time - 7.5 * 0.9).abs() < 1e-4);
+}
+
+#[test]
+fn zombie_hits_wound_the_player() {
+    use pz_sim::*;
+    use pz_world::World;
+    let mut w = World::new(std::path::PathBuf::from("."));
+    let mut p = Player::new(0.0, 0.0);
+    let mut z = Zombie::new(0.5, 0.0, 0);
+    for _ in 0..600 { z.tick(&mut p, &mut w); if p.health <= 0.0 { break; } }
+    assert!(p.health < 100.0);
+    assert!(p.body.parts.iter().any(|b| b.scratch_time > 0.0 || b.cut_time > 0.0 || b.bite_time > 0.0), "a landed hit should leave a wound");
+}

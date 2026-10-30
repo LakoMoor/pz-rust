@@ -88,3 +88,34 @@ impl Body {
         self.reduce_general_health(general);
     }
 }
+
+impl Body {
+    /// `BodyPart.setScratched`: 7-15 time units, bleeding for 30-60% of that (default injury severity).
+    /// `r1`, `r2` are uniform [0,1) samples standing in for the two `Rand.Next` calls.
+    pub fn scratch(&mut self, part: usize, r1: f32, r2: f32) {
+        let t = 7.0 + r1 * 8.0;
+        let p = &mut self.parts[part];
+        p.scratch_time = t;
+        p.bandaged = false;
+        p.stitched = false;
+        p.bleeding_time = (t * (0.3 + r2 * 0.3)) * BLEEDING_TIME_MODIFIER[part];
+    }
+
+    /// `BodyPart.setCut`: 10-20 time units, bleeding for 70-100% of that.
+    pub fn cut(&mut self, part: usize, r1: f32, r2: f32) {
+        let t = 10.0 + r1 * 10.0;
+        let p = &mut self.parts[part];
+        p.cut_time = t;
+        p.bandaged = false;
+        p.stitched = false;
+        p.bleeding_time = (t * (0.7 + r2 * 0.3)) * BLEEDING_TIME_MODIFIER[part];
+    }
+
+    /// `BodyPart.SetBitten`: bite lasts 50-80 time units and bleeds for 7.5-15.
+    pub fn bite(&mut self, part: usize, r1: f32, r2: f32) {
+        let p = &mut self.parts[part];
+        p.bite_time = 50.0 + r1 * 30.0;
+        p.bandaged = false;
+        p.bleeding_time = (7.5 + r2 * 7.5) * BLEEDING_TIME_MODIFIER[part];
+    }
+}
