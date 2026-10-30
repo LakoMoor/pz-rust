@@ -8,3 +8,4 @@ license.workspace = true
 mlua = { version = "0.10", features = ["lua51", "vendored"] }
 pz-items = { path = "../pz-items" }
 pz-sim = { path = "../pz-sim" }
+pz-world = { path = "../pz-world" }

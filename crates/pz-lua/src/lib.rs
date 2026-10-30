@@ -134,3 +134,32 @@ impl Runtime {
         g.set("getSpecificPlayer", lua.create_function(move |_, _: i32| Ok(t.clone()))?)
     }
 }
+
+impl Runtime {
+    /// `getCell():getGridSquare(x, y, z)`: nil outside loaded map data, otherwise a square with the collision
+    /// queries scripts use. Flags are read when the square is requested.
+    pub fn bind_world(&self, world: Rc<RefCell<pz_world::World>>) -> Result<()> {
+        use pz_world::flag as f;
+        let lua = &self.lua;
+        let cell = lua.create_table()?;
+        cell.set("getGridSquare", lua.create_function(move |lua, (_this, x, y, z): (mlua::Value, i32, i32, i32)| {
+            let mut w = world.borrow_mut();
+            if z < 0 || !w.ensure(x, y) { return Ok(mlua::Value::Nil); }
+            let bits = w.flags(x, y, z as usize);
+            let sq = lua.create_table()?;
+            let has = |mask: u16| bits & mask != 0;
+            let (solid, door, window) = (has(f::SOLID), has(f::DOOR_N | f::DOOR_W), has(f::WINDOW_N | f::WINDOW_W));
+            let (floor, open) = (w.has_floor(x, y, z as usize), w.door_open(x, y, z as usize));
+            for (name, v) in [("getX", x as f64), ("getY", y as f64), ("getZ", z as f64)] {
+                sq.set(name, lua.create_function(move |_, _: mlua::MultiValue| Ok(v))?)?;
+            }
+            for (name, v) in [("isSolid", solid), ("isFree", !solid), ("HasStairs", has(f::STAIR_BN | f::STAIR_MN | f::STAIR_TN | f::STAIR_BW | f::STAIR_MW | f::STAIR_TW)),
+                              ("isDoor", door), ("isWindow", window), ("isDoorOpen", open), ("hasFloor", floor)] {
+                sq.set(name, lua.create_function(move |_, _: mlua::MultiValue| Ok(v))?)?;
+            }
+            Ok(mlua::Value::Table(sq))
+        })?)?;
+        let c2 = cell.clone();
+        lua.globals().set("getCell", lua.create_function(move |_, ()| Ok(c2.clone()))?)
+    }
+}

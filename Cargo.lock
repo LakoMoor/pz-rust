@@ -1593,6 +1593,7 @@ dependencies = [
  "mlua",
  "pz-items",
  "pz-sim",
+ "pz-world",
 ]
 
 [[package]]

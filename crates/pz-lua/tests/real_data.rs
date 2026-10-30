@@ -98,3 +98,32 @@ fn scripts_see_the_live_player_state() {
     let same: bool = rt.lua.load("return getSpecificPlayer(0) == getPlayer()").eval().unwrap();
     assert!(same);
 }
+
+#[test]
+fn scripts_query_squares_of_the_real_map() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let media = dir.parent().unwrap().to_path_buf();
+    let mut w = pz_world::World::new(media.join("maps").join("Muldraugh, KY"));
+    w.load_tile_flags(&media);
+    // Find a solid and a free ground square near Muldraugh for the script to ask about.
+    let (mut solid, mut free) = (None, None);
+    'scan: for y in 1500..1560 {
+        for x in 12500..12560 {
+            let fl = w.flags(x, y, 0);
+            if fl & pz_world::flag::SOLID != 0 && solid.is_none() { solid = Some((x, y)); }
+            if fl == 0 && w.has_floor(x, y, 0) && free.is_none() { free = Some((x, y)); }
+            if solid.is_some() && free.is_some() { break 'scan; }
+        }
+    }
+    let (solid, free) = (solid.unwrap(), free.unwrap());
+    let rt = Runtime::new().unwrap();
+    rt.bind_world(Rc::new(RefCell::new(w))).unwrap();
+    let q = |(x, y): (i32, i32)| -> (bool, bool, bool) {
+        rt.lua.load(format!("local s = getCell():getGridSquare({x}, {y}, 0); return s:isSolid(), s:isFree(), s:hasFloor()")).eval().unwrap()
+    };
+    assert_eq!(q(solid).0, true);
+    assert_eq!(q(free), (false, true, true));
+    let nowhere: bool = rt.lua.load("return getCell():getGridSquare(-5000, -5000, 0) == nil").eval().unwrap();
+    assert!(nowhere);
+}
