@@ -4,6 +4,7 @@ use pz_world::{flag, World};
 pub mod firearm;
 pub mod simplex;
 pub mod thunder;
+pub mod infection;
 pub mod noise2d;
 pub mod climate;
 pub mod jrandom;
@@ -31,6 +32,8 @@ pub struct Player {
     pub health: f32,
     /// Set by a zombie bite (the game's infection mechanic; no cure in vanilla).
     pub infected: bool,
+    /// Started the first time `tick_infection` sees `infected`.
+    infection: Option<infection::Infection>,
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -43,9 +46,23 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, infection: None, facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
+    /// `BodyDamage.Update` infected branch: call once per tick with the world age in hours. `mortality` is
+    /// the sandbox setting and `roll` a uniform [0,1) sample used when the infection starts.
+    /// Returns true on the tick the infection kills.
+    pub fn tick_infection(&mut self, now_hours: f32, mortality: u8, roll: f32) -> bool {
+        if !self.infected || self.health <= 0.0 { return false; }
+        if self.infection.is_none() {
+            let Some(duration) = infection::mortality_hours(mortality, roll, 1.0) else { return false };
+            self.infection = Some(infection::Infection { start: now_hours, duration });
+        }
+        self.health = self.infection.unwrap().apply(now_hours, self.health);
+        if self.health <= 0.0 { self.health = 0.0; return true; }
+        false
+    }
+
     pub fn tick(&mut self, input: Input, world: &mut World) {
         self.swing_cd = self.swing_cd.saturating_sub(1);
         let moved_from = self.pos;
