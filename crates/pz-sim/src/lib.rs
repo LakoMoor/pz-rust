@@ -5,6 +5,7 @@ pub mod firearm;
 pub mod simplex;
 pub mod thunder;
 pub mod infection;
+pub mod body;
 pub mod noise2d;
 pub mod climate;
 pub mod jrandom;
