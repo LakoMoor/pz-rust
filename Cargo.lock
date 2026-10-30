@@ -1548,6 +1548,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pz-sounds"
+version = "0.1.0"
+dependencies = [
+ "pz-scripts",
+]
+
+[[package]]
 name = "pz-viewer"
 version = "0.1.0"
 dependencies = [
