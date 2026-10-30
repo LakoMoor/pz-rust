@@ -11,6 +11,7 @@ pub mod needs;
 pub mod noise2d;
 pub mod climate;
 pub mod jrandom;
+pub mod thermo;
 
 pub const TICK_HZ: f32 = 30.0;
 pub const TICK_DT: f32 = 1.0 / TICK_HZ;
