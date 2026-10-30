@@ -169,6 +169,27 @@ impl Thermoregulator {
         }
     }
 
+    /// `getCatchAColdDelta`: how strongly chilled skin (below 33 degrees) and wet skin push toward a cold, weighting
+    /// the neck, upper torso and head most. `wetness` is the per-part body wetness (0..=100); clothing is not modelled.
+    pub fn catch_a_cold_delta(&self, wetness: &[f32; PARTS], hypothermia_level: u8) -> f32 {
+        let mut delta = 0.0;
+        for k in 0..PARTS {
+            let skin_c = self.nodes[k].skin_celcius;
+            let mut skin = 0.0;
+            if skin_c < 33.0 {
+                skin = 1.0 - (skin_c - 20.0) / 13.0;
+                skin *= skin;
+            }
+            let mut add = 0.25 * skin * SKIN_SURFACE[k];
+            let wet = clamp01(wetness[k] * 0.01);
+            if wet > 0.0 { add *= 1.0 + wet; }
+            add *= match k { 9 => 8.0, 6 => 16.0, 8 => 4.0, _ => 1.0 };
+            delta += add;
+        }
+        if hypothermia_level > 1 { delta *= hypothermia_level as f32; }
+        delta
+    }
+
     /// One tick (game-time multiplier 1).
     pub fn update(&mut self, i: &Inputs) {
         self.set_point = 37.0;
