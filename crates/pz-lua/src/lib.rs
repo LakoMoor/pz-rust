@@ -33,6 +33,77 @@ function triggerEvent(name, ...)
 end
 "#;
 
+/// `BaseAction` / `LuaTimedActionNew` and the per-tick action loop of `IsoGameCharacter.update`.
+/// Progress advances by the game-time multiplier each tick; `finished()` is `currentTime >= maxTime`.
+const TIMED_ACTIONS: &str = r#"
+LuaTimedActionNew = {}
+LuaTimedActionNew.__index = LuaTimedActionNew
+function LuaTimedActionNew.new(t, chr)
+    local a = setmetatable({ table = t, chr = chr, currentTime = -2, maxTime = t.maxTime, delta = 0,
+        started = false, forceStop = false, forceComplete = false, loopAction = t.loopedAction or false }, LuaTimedActionNew)
+    return a
+end
+local function call(a, name)
+    local f = a.table[name]
+    if f then return f(a.table) end
+end
+function LuaTimedActionNew:valid() return call(self, "isValid") == true end
+function LuaTimedActionNew:finished() return self.currentTime >= self.maxTime and self.maxTime ~= -1 end
+function LuaTimedActionNew:isStarted() return self.started end
+function LuaTimedActionNew:getJobDelta() return self.delta end
+function LuaTimedActionNew:setJobDelta(d) self.currentTime = self.maxTime * d; self.delta = d end
+function LuaTimedActionNew:resetJobDelta() self.delta = 0; self.currentTime = 0 end
+function LuaTimedActionNew:setCurrentTime(t) self.currentTime = t end
+function LuaTimedActionNew:forceStop() self.forceStop = true end
+function LuaTimedActionNew:forceComplete() self.forceComplete = true end
+function LuaTimedActionNew:setTime(t) self.maxTime = t end
+function LuaTimedActionNew:setActionAnim() end
+function LuaTimedActionNew:setAnimVariable() end
+function LuaTimedActionNew:setOverrideHandModelsObject() end
+function LuaTimedActionNew:setOverrideHandModelsString() end
+function LuaTimedActionNew:overrideWeaponType() end
+function LuaTimedActionNew:restoreWeaponType() end
+function LuaTimedActionNew:waitToStart()
+    if call(self, "waitToStart") == false or self.table.waitToStart == nil then
+        self.started = true
+        self.forceComplete, self.forceStop = false, false
+        self.currentTime = 0
+        call(self, "start")
+    end
+end
+function LuaTimedActionNew:update(mult)
+    self.currentTime = self.currentTime + mult
+    if self.currentTime < 0 then self.currentTime = 0 end
+    if self.maxTime == 0 then self.delta = 0 elseif self.maxTime ~= -1 then self.delta = math.min(self.currentTime / self.maxTime, 1) end
+    call(self, "update")
+end
+function LuaTimedActionNew:stop() call(self, "stop") end
+function LuaTimedActionNew:perform() call(self, "perform") end
+function LuaTimedActionNew:complete() call(self, "complete") end
+
+function __startAction(chr, act)
+    chr.__actions = { act }
+    if act:valid() then act:waitToStart() end
+end
+function __updateActions(chr, mult)
+    local list = chr.__actions
+    local act = list and list[1]
+    if not act then return end
+    local valid = act:valid()
+    if valid and not act.started then act:waitToStart()
+    elseif valid and not act:finished() and not act.forceComplete and not act.forceStop then act:update(mult) end
+    if not valid or act:finished() or act.forceComplete or act.forceStop then
+        local done = act:finished() or act.forceComplete
+        if done then act:perform(); act:complete(); valid = true end
+        if (done and not act.loopAction) or act.forceStop or not valid then
+            if act.started and (act.forceStop or not valid) then act:stop() end
+            table.remove(list, 1)
+        end
+        act.forceComplete = false
+    end
+end
+"#;
+
 pub struct Runtime { pub lua: Lua }
 
 impl Runtime {
@@ -40,6 +111,7 @@ impl Runtime {
         let lua = Lua::new();
         // Kahlua's `print` and the `getText` fallback are the only globals scripts need at load time.
         lua.load(PRELUDE).exec()?;
+        lua.load(TIMED_ACTIONS).exec()?;
         Ok(Self { lua })
     }
 
@@ -49,6 +121,21 @@ impl Runtime {
         let mut v = args.into_lua_multi(&self.lua)?;
         v.push_front(mlua::Value::String(self.lua.create_string(name)?));
         f.call::<()>(v)
+    }
+
+    /// One game tick of the player's action queue (`mult` is the game-time multiplier, 1.0 at normal speed).
+    pub fn tick_actions(&self, mult: f64) -> Result<()> {
+        let f: mlua::Function = self.lua.globals().get("__tickPlayerActions")?;
+        f.call::<()>(mult)
+    }
+
+    /// Let `require "Name"` find `Name.lua` under `root` (the game resolves requires against the
+    /// `shared`, `client` and `server` folders).
+    pub fn add_lua_root(&self, root: &Path) -> Result<()> {
+        let package: mlua::Table = self.lua.globals().get("package")?;
+        let old: String = package.get("path")?;
+        let root = root.display().to_string().replace('\\', "/");
+        package.set("path", format!("{root}/?.lua;{old}"))
     }
 
     /// Run a script file; the chunk is named after the file so errors point to it.
@@ -128,6 +215,17 @@ impl Runtime {
         let p = player.clone();
         body.set("IsInfected", lua.create_function(move |_, _: mlua::MultiValue| Ok(p.borrow().infected))?)?;
         t.set("getBodyDamage", lua.create_function(move |_, _: mlua::MultiValue| Ok(body.clone()))?)?;
+        // Plain flags scripts set on the character; nothing in the simulation reads them yet.
+        for (setter, field) in [("setTimedActionToRetrigger", "__retrigger"), ("setIsFarming", "__farming")] {
+            let me = t.clone();
+            t.set(setter, lua.create_function(move |_, (_this, v): (mlua::Value, mlua::Value)| me.set(field, v))?)?;
+        }
+        let start: mlua::Function = lua.globals().get("__startAction")?;
+        let tt0 = t.clone();
+        t.set("StartAction", lua.create_function(move |_, (_this, act): (mlua::Value, mlua::Value)| start.call::<()>((tt0.clone(), act)))?)?;
+        let update: mlua::Function = lua.globals().get("__updateActions")?;
+        let tt1 = t.clone();
+        self.lua.globals().set("__tickPlayerActions", lua.create_function(move |_, mult: f64| update.call::<()>((tt1.clone(), mult)))?)?;
         let g = lua.globals();
         let tt = t.clone();
         g.set("getPlayer", lua.create_function(move |_, ()| Ok(tt.clone()))?)?;

@@ -146,3 +146,41 @@ fn a_script_can_open_and_close_a_door_in_the_live_world() {
     assert_eq!((a, b, c), (true, true, false));
     assert!(!world.borrow().door_open(x, y, 0));
 }
+
+#[test]
+fn a_real_timed_action_runs_through_start_update_perform() {
+    use std::{cell::RefCell, rc::Rc};
+    let Some(dir) = lua_dir() else { return };
+    let rt = Runtime::new().unwrap();
+    rt.bind_player(Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)))).unwrap();
+    rt.add_lua_root(&dir.join("shared")).unwrap();
+    rt.lua.load("ISTimedActionQueue = {}").exec().unwrap();
+    rt.run_file(&dir.join("shared/TimedActions/ISBaseTimedAction.lua")).unwrap();
+    // A game action built on the real base class. Moodles and body damage (adjustMaxTime) are not bound yet,
+    // so the test action keeps its duration as is.
+    rt.lua.load(r#"
+        log = {}
+        Walk = ISBaseTimedAction:derive("Walk")
+        function Walk:isValid() return not self.cancelled end
+        function Walk:adjustMaxTime(t) return t end
+        function Walk:start() table.insert(log, "start") end
+        function Walk:update() table.insert(log, "update " .. string.format("%.2f", self:getJobDelta())) end
+        function Walk:stop() table.insert(log, "stop") end
+        function Walk:perform() table.insert(log, "perform") end
+        function Walk:complete() table.insert(log, "complete") end
+        function Walk:new(chr, t) local o = ISBaseTimedAction.new(self, chr); o.maxTime = t; return o end
+        player = getPlayer()
+        a = Walk:new(player, 4); a:begin()
+    "#).exec().unwrap();
+    for _ in 0..6 { rt.tick_actions(1.0).unwrap(); }
+    let log: String = rt.lua.load(r#"return table.concat(log, ",")"#).eval().unwrap();
+    // begin() starts the action at once (StartAction -> waitToStart -> start); four ticks reach maxTime, then it completes.
+    assert_eq!(log, "start,update 0.25,update 0.50,update 0.75,update 1.00,perform,complete");
+    // A cancelled action is stopped, not completed.
+    rt.lua.load(r#"log = {}; b = Walk:new(player, 100); b:begin()"#).exec().unwrap();
+    rt.tick_actions(1.0).unwrap(); rt.tick_actions(1.0).unwrap();
+    rt.lua.load("b.cancelled = true").exec().unwrap();
+    rt.tick_actions(1.0).unwrap();
+    let log: String = rt.lua.load(r#"return table.concat(log, ",")"#).eval().unwrap();
+    assert_eq!(log, "start,update 0.01,update 0.02,stop");
+}
