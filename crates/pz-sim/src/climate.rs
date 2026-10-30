@@ -107,6 +107,28 @@ impl Seasons {
     fn summer_str(&self, y: i32) -> f32 { self.noise.layered_noise((128 + y) as f32, 128.0) + self.noise.layered_noise(128.0, (128 + y) as f32) - 1.0 }
     fn winter_str(&self, y: i32) -> f32 { self.noise.layered_noise((64 + y) as f32, 64.0) + self.noise.layered_noise(64.0, (64 + y) as f32) - 1.0 }
 
+    /// Boundary days of a year's seasons (`setYearData`): the winter that starts before 22 Dec, the one that ends
+    /// after it, and the summer around 22 Jun, each stretched by the noise-driven strength of that year.
+    fn season_days(&self, y: i32) -> (i64, i64, i64, i64) {
+        let winter_mod = if self.temp_min < 0 { 0.05 * -self.temp_min as f32 } else { 0.02 * -self.temp_min as f32 };
+        let summer_mod = if self.temp_max < 0 { 0.05 * self.temp_max as f32 } else { 0.02 * self.temp_max as f32 };
+        let s = |m: f32, n: f32| (40.0 + 40.0 * m + 20.0 * n).floor() as i64;
+        let (dec, jun) = (days_from_civil(y, 11, 22), days_from_civil(y, 5, 22));
+        let wsn = self.noise.layered_noise((64 + y) as f32, 64.0);
+        let wen = self.noise.layered_noise(64.0, (64 + y) as f32);
+        let ssn = self.noise.layered_noise((128 + y) as f32, 128.0);
+        let sen = self.noise.layered_noise(128.0, (128 + y) as f32);
+        (dec - s(winter_mod, wsn), dec + s(winter_mod, wen), jun - s(summer_mod, ssn), jun + s(summer_mod, sen))
+    }
+
+    /// `ErosionSeason.curSeason`: 1 spring, 2 summer, 4 autumn, 5 winter.
+    pub fn season(&self, year: i32, month: i32, day: i32) -> u8 {
+        let d = days_from_civil(year, month, day);
+        let (_, prev_winter_end, _, _) = self.season_days(year - 1);
+        let (winter_start, _, summer_start, summer_end) = self.season_days(year);
+        if d < prev_winter_end { 5 } else if d < summer_start { 1 } else if d < summer_end { 2 } else if d < winter_start { 4 } else { 5 }
+    }
+
     /// `(mean temperature, actual temperature)` of a day (month 0-based): the seasonal average between the hottest
     /// and coldest days of the year, and that average plus the day-to-day noise swing.
     pub fn day_temperature(&self, year: i32, month: i32, day: i32) -> (f32, f32) {
@@ -266,11 +288,36 @@ impl Climate {
             + ((self.year - 1990).wrapping_mul(self.month).wrapping_mul(10000)) as i64
             + (((self.offsets.b as i32).wrapping_sub(self.offsets.a as i32)).wrapping_mul(self.day)) as i64;
         let mut rng = JavaRandom::new(seed);
-        let _cloud_colour_roll = rng.next_float();
-        let (lo, hi) = if self.front.kind == 1 { (24.0, 48.0) } else { (12.0, 24.0) };
-        let max_duration = (lo + rng.next_float() * (hi - lo)) * s;
-        let duration = max_duration as f64 + 3.0 + 2.5 * s as f64;
-        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength: s, rain_threshold: 0.35 - s * 0.2 });
+        let mut rand = |lo: f32, hi: f32| lo + rng.next_float() * (hi - lo);
+        // Per-season chances and rain-time multiplier (`createWeatherPattern`); winter's blizzard logic and its
+        // conditional multiplier are not ported (blizzard 0, multiplier 1).
+        let (storm_chance, tropical_chance, time_mult) = match self.seasons.season(self.year, self.month, self.day) {
+            1 => (75.0, 10.0, 1.25),
+            2 => (60.0, 55.0, 1.0),
+            4 => (100.0, 25.0, 1.35),
+            _ => (10.0, 0.0, 1.0),
+        };
+        let _cloud_colour_roll = rand(0.0, 100.0);
+        let warm = self.front.kind == 1;
+        let (mut kind, mut staged) = (PeriodKind::Rain, 0.0f32);
+        if warm {
+            let tropical = s > 0.75 && tropical_chance > 0.0 && rand(0.0, 100.0) < tropical_chance;
+            if tropical {
+                kind = PeriodKind::Tropical;
+                staged += 8.0 + rand(0.0, 16.0 * s);
+                for p in [60.0, 30.0] { if rand(0.0, 100.0) < p * s { staged += 5.0 + rand(0.0, 5.0 * s); } }
+            } else if s > 0.5 && storm_chance > 0.0 && rand(0.0, 100.0) < storm_chance {
+                kind = PeriodKind::Thunderstorm;
+                staged += 5.0 + rand(0.0, 5.0 * s);
+                for (p, span) in [(70.0, 4.0), (50.0, 4.0), (25.0, 3.0), (12.5, 2.0)] {
+                    if rand(0.0, 100.0) < p * s { staged += 4.0 + rand(0.0, span * s); }
+                }
+            }
+        }
+        let (lo, hi) = if warm { (24.0, 48.0) } else { (12.0, 24.0) };
+        let max_duration = rand(lo, hi) * s;
+        let duration = (max_duration.max(staged) as f64 + 3.0 + 2.5 * s as f64) * time_mult as f64;
+        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength: s, rain_threshold: 0.35 - s * 0.2, kind });
     }
 
     /// Current air mass (wind and temperature offset) at the clock's time.
@@ -297,7 +344,12 @@ pub struct RainPeriod {
     /// Peak strength 0..1 of the front.
     pub strength: f32,
     pub rain_threshold: f32,
+    pub kind: PeriodKind,
 }
+
+/// What a front is made of: ordinary rain, a thunderstorm (stage 3) or a tropical storm (stage 8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeriodKind { Rain, Thunderstorm, Tropical }
 
 impl RainPeriod {
     pub fn is_over(&self, hours: f64) -> bool { hours >= self.start_hours + self.duration }
@@ -314,7 +366,7 @@ impl RainPeriod {
 impl Climate {
     /// Start a rain front now, lasting `duration` hours.
     pub fn start_rain(&mut self, duration: f64, strength: f32, rain_threshold: f32) {
-        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength, rain_threshold });
+        self.period = Some(RainPeriod { start_hours: self.world_age_hours, duration, strength, rain_threshold, kind: PeriodKind::Rain });
     }
 
     /// Air temperature in degrees C (`ClimateValues`): the seasonal mean plus the air-mass term, warmed by up to
@@ -334,9 +386,11 @@ impl Climate {
         self.period.map_or(0.0, |p| p.intensity(self.world_age_hours))
     }
 
-    /// Whether what falls is snow: below freezing. (The original also requires winter, or the Winter-is-Coming
-    /// mode, but the season dates are not ported, so a cold snap in any season counts.)
-    pub fn is_snow(&self, clock: &GameClock) -> bool { self.temperature(clock) < 0.0 }
+    /// Whether what falls is snow: below freezing in winter (`WeatherPeriod.updateCurrentStage`; the
+    /// Winter-is-Coming mode, which forces winter, is not ported).
+    pub fn is_snow(&self, clock: &GameClock) -> bool {
+        self.temperature(clock) < 0.0 && self.seasons.season(self.year, self.month, self.day) == 5
+    }
 
     /// `ClimateManager.getRainIntensity`: precipitation that is not snow (feeds the zombies' vision penalty).
     pub fn rain_at(&self, clock: &GameClock) -> f32 {

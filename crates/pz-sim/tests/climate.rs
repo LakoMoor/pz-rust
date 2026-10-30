@@ -136,7 +136,7 @@ fn rain_comes_and_goes_with_a_front_and_blinds_zombies() {
     use pz_sim::GameClock;
     // Below the threshold nothing falls; above it the amount scales with the strength.
     assert_eq!(precipitation(10.0, 0.5, 0.0, 0.3), 0.0);
-    let p = RainPeriod { start_hours: 100.0, duration: 20.0, strength: 1.0, rain_threshold: 0.2 };
+    let p = RainPeriod { start_hours: 100.0, duration: 20.0, strength: 1.0, rain_threshold: 0.2, kind: pz_sim::climate::PeriodKind::Rain };
     assert_eq!(p.intensity(99.0), 0.0);
     assert_eq!(p.intensity(120.5), 0.0);
     let mid: Vec<f32> = (0..200).map(|i| p.intensity(105.0 + i as f64 * 0.05)).collect();
@@ -224,4 +224,56 @@ fn cold_precipitation_falls_as_snow_and_does_not_blind_zombies() {
     // In deep winter the same front is snow (when the air is below freezing), so it adds no rain penalty.
     if cw.is_snow(&winter) { assert_eq!(cw.rain_at(&winter), 0.0); assert!(cw.snow_at(&winter) > 0.0); }
     else { assert!(cw.rain_at(&winter) > 0.0 && cw.snow_at(&winter) == 0.0); }
+}
+
+#[test]
+fn seasons_follow_the_calendar_with_noisy_boundaries() {
+    use pz_sim::climate::Seasons;
+    let s = Seasons::default();
+    // Midwinter, midsummer; spring and autumn in between.
+    assert_eq!(s.season(1993, 0, 15), 5);
+    assert_eq!(s.season(1993, 5, 22), 2);
+    assert_eq!(s.season(1993, 11, 22), 5);
+    assert_eq!(s.season(1993, 3, 10), 1);
+    assert_eq!(s.season(1993, 9, 25), 4);
+    // Walking through a year visits the seasons in order 5 -> 1 -> 2 -> 4 -> 5 exactly once each.
+    let mut order = vec![];
+    for m in 0..12 { for d in [1, 10, 20] {
+        let x = s.season(1994, m, d);
+        if order.last() != Some(&x) { order.push(x); }
+    } }
+    assert_eq!(order, vec![5, 1, 2, 4, 5]);
+    // Other years shift the boundaries by a few days only.
+    let diff = (0..365).filter(|&k| s.season(1993, (k / 31).min(11), k % 28 + 1) != s.season(1995, (k / 31).min(11), k % 28 + 1)).count();
+    assert!(diff < 90, "{diff}");
+}
+
+#[test]
+fn strong_warm_fronts_sometimes_become_storms_and_last_longer() {
+    use pz_sim::climate::{Climate, Offsets, PeriodKind, Seasons};
+    use pz_sim::{GameClock, TICK_HZ};
+    let (mut storms, mut tropical, mut plain, mut storm_len, mut plain_len) = (0, 0, 0, 0.0f64, 0.0f64);
+    for seed in 0..12 {
+        let mut clock = GameClock { hour: 6.0, day_seconds: 60.0, ..GameClock::default() };
+        let o = Offsets { a: 500.0 + seed as f64 * 613.0, b: 9000.0 + seed as f64 * 77.0, c: -3000.0, d: -9000.0 };
+        let mut cl = Climate::new(Seasons::default(), o, 1993, 6, 9, &mut clock);
+        let mut last = None;
+        for _ in 0..(600.0 * 60.0 * TICK_HZ) as u32 {
+            clock.tick();
+            cl.advance(&mut clock);
+            if cl.period != last {
+                last = cl.period;
+                if let Some(p) = last {
+                    assert!(p.duration > 0.0 && p.duration < 400.0, "{p:?}");
+                    match p.kind {
+                        PeriodKind::Thunderstorm => { storms += 1; storm_len += p.duration; assert!(p.strength > 0.5); }
+                        PeriodKind::Tropical => { tropical += 1; assert!(p.strength > 0.75); }
+                        PeriodKind::Rain => { plain += 1; plain_len += p.duration; }
+                    }
+                }
+            }
+        }
+    }
+    assert!(plain > 10 && storms > 0, "plain {plain} storms {storms} tropical {tropical}");
+    assert!(storm_len / storms as f64 > plain_len / plain as f64, "storms should outlast ordinary rain");
 }
