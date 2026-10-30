@@ -290,7 +290,7 @@ impl Runtime {
             chr.__moodles, chr.__pain = {}, {}
             function chr:setMoodleLevel(name, level) self.__moodles[name] = level end
             function chr:setPain(part, pain) self.__pain[part] = pain end
-            function chr:getMoodles() return { getMoodleLevel = function(_, name) return self.__moodles[name] or 0 end } end
+            function chr:getMoodles() return { getMoodleLevel = function(_, name) return self.__moodles[name] or __moodle(name) end } end
             local body = chr:getBodyDamage()
             function body:getBodyPart(i)
                 local info = __bodyPart(i)
@@ -393,6 +393,16 @@ impl Runtime {
                     }
                 }
                 Ok(())
+            })?)?;
+            let p = player.clone();
+            lua.globals().set("__moodle", lua.create_function(move |_, name: String| {
+                let pl = p.borrow();
+                let h = pl.body.overall_health();
+                Ok(match name.as_str() {
+                    "INJURED" => pz_sim::moodles::injured(h) as i64,
+                    "BLEEDING" => pz_sim::moodles::bleeding(&pl.body, h) as i64,
+                    _ => 0,
+                })
             })?)?;
             let p = player.clone();
             lua.globals().set("__bodyOverall", lua.create_function(move |_, ()| Ok(p.borrow().body.overall_health() as f64))?)?;

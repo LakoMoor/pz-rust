@@ -1,0 +1,21 @@
+//! Moodle levels that follow from the body model, ported from `Moodle.java` / `MoodleStat.java`.
+//! Levels are 0 (none) to 4 (max). Moodles driven by stats that are not simulated yet (hunger, tiredness, pain
+//! stat, ...) are not here.
+
+use crate::body::Body;
+
+/// Threshold ladder (`MoodleStat`): a value strictly above the n-th entry reaches level n+1.
+fn ladder(value: f32, t: [f32; 4]) -> u8 { t.iter().filter(|&&x| value > x).count() as u8 }
+
+/// `MoodleType.INJURED`: from missing health, thresholds 20 / 40 / 60 / 75. Dead characters show none.
+pub fn injured(overall_health: f32) -> u8 {
+    if overall_health == 0.0 { 0 } else { ladder(100.0 - overall_health, [20.0, 40.0, 60.0, 75.0]) }
+}
+
+/// `MoodleType.BLEEDING`: one level per bleeding part (max 4); a bleeding neck is always max.
+pub fn bleeding(body: &Body, overall_health: f32) -> u8 {
+    if overall_health == 0.0 { return 0; }
+    const NECK: usize = 9;
+    if body.parts[NECK].bleeding_time > 0.0 { return 4; }
+    body.num_bleeding().min(4) as u8
+}

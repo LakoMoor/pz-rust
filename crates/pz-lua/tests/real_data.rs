@@ -371,3 +371,25 @@ fn the_real_stitch_action_closes_a_deep_wound_and_leaves_pain() {
     assert!((1.0..2.5).contains(&part.stitch_time), "{}", part.stitch_time);
     assert_eq!(part.additional_pain, 10.0);
 }
+
+#[test]
+fn scripts_see_bleeding_and_injured_moodles_from_the_body() {
+    use std::{cell::RefCell, rc::Rc};
+    let rt = Runtime::new().unwrap();
+    let player = Rc::new(RefCell::new(pz_sim::Player::new(0.0, 0.0)));
+    rt.bind_player(player.clone()).unwrap();
+    let levels = |rt: &Runtime| -> (i64, i64) {
+        rt.lua.load("local m = getPlayer():getMoodles(); return m:getMoodleLevel(MoodleType.BLEEDING), m:getMoodleLevel(MoodleType.INJURED)").eval().unwrap()
+    };
+    assert_eq!(levels(&rt), (0, 0));
+    {
+        let mut p = player.borrow_mut();
+        p.body.start_bleeding(6, 5.0);
+        p.body.start_bleeding(7, 5.0);
+        p.body.parts[8].health = 20.0; // head: 80 * 0.6 = 48 missing
+    }
+    assert_eq!(levels(&rt), (2, 2)); // 48 points missing: above 20 and 40, not 60
+    // An explicit override (setMoodleLevel) still wins, for scripts and tests that pin a level.
+    rt.lua.load("getPlayer():setMoodleLevel('BLEEDING', 4)").exec().unwrap();
+    assert_eq!(levels(&rt).0, 4);
+}
