@@ -210,6 +210,14 @@ impl Server {
         true
     }
 
+    /// Take off the garment worn at `index` (wearing order). Returns false if there is no such garment.
+    pub fn take_off(&mut self, player: ClientId, index: usize) -> bool {
+        match self.players.get_mut(&player) {
+            Some(p) if index < p.worn.len() => { p.worn.remove(index); true }
+            _ => false,
+        }
+    }
+
     /// Whether the power grid still works (`SandboxOptions.doesPowerGridExist`).
     pub fn power_on(&self) -> bool { (self.world_hours / 24.0) as f64 <= self.elec_shut_days as f64 }
 

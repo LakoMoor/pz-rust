@@ -36,3 +36,20 @@ fn a_coat_keeps_a_player_warmer_in_the_cold() {
     let dressed = run(vec![Garment::new("Jacket", 0.9, 0.9), Garment::new("Trousers", 0.7, 0.6), Garment::new("Head", 0.9, 0.9)]);
     assert!(dressed > bare + 0.3, "dressed {dressed} bare {bare}");
 }
+
+#[test]
+fn rain_soaks_the_outer_layer_first_and_clothes_dry_out() {
+    use pz_sim::wetness::Weather;
+    let mut p = Player::new(0.0, 0.0);
+    p.worn = vec![Garment::new("Shirt", 0.3, 0.1), Garment::new("Jacket", 0.8, 0.6)];
+    let rain = Weather { outside: true, raining: true, rain_intensity: 1.0, air_temperature: 10.0 };
+    for _ in 0..2000 { p.tick_wetness(rain); }
+    assert!(p.worn[1].wetness > 20.0, "coat {}", p.worn[1].wetness);
+    assert!(p.worn[0].wetness < p.worn[1].wetness, "shirt {}", p.worn[0].wetness);
+    let wet_ins = node_values(&p.worn).0[6];
+    assert!(wet_ins < node_values(&[Garment::new("Shirt", 0.3, 0.1), Garment::new("Jacket", 0.8, 0.6)]).0[6]);
+    let dry_weather = Weather { outside: false, raining: false, rain_intensity: 0.0, air_temperature: 25.0 };
+    let before = p.worn[1].wetness;
+    for _ in 0..5000 { p.tick_wetness(dry_weather); }
+    assert!(p.worn[1].wetness < before);
+}

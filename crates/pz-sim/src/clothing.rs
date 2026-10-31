@@ -86,3 +86,21 @@ pub fn node_values(worn: &[Garment]) -> ([f32; PARTS], [f32; PARTS]) {
     }
     (ins, wind)
 }
+
+/// Rain or drying on worn clothing, after the outer-layer loop of `ClothingWetness.updateWetness`. `delta` is the
+/// per-tick change on bare skin (`rain * 0.015` when wetting, negative `0.01 * drying` when drying). For each body part
+/// the outermost garment that is neither saturated (when wetting) nor already dry (when drying) takes it, divided
+/// among the parts the garment covers; a wetting tick stops at that layer. Layers are in wearing order, so the last
+/// one worn is outermost. Water resistance, holes and umbrellas are not modelled.
+pub fn soak(worn: &mut [Garment], delta: f32) {
+    if delta == 0.0 { return; }
+    for part in 0..PARTS {
+        for g in worn.iter_mut().rev() {
+            if !g.parts.contains(&part) { continue; }
+            if delta > 0.0 && g.wetness >= 100.0 { continue; }
+            if delta < 0.0 && g.wetness <= 0.0 { continue; }
+            g.wetness = (g.wetness + delta / g.parts.len() as f32).clamp(0.0, 100.0);
+            if delta > 0.0 { break; }
+        }
+    }
+}

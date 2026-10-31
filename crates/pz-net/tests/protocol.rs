@@ -225,3 +225,14 @@ fn wearing_clothing_adds_insulation_to_the_covered_parts() {
     let (ins, _) = pz_sim::clothing::node_values(&p.worn);
     assert!(ins[6] > 1.0 && ins[16] == 0.0);
 }
+
+#[test]
+fn clothes_can_be_taken_off_again() {
+    let mut s = server();
+    s.join(1, 0.0, 0.0);
+    let hat = pz_items::ItemDef { blood_location: vec!["Head".into()], insulation: 0.9, wind_resistance: 0.9, ..Default::default() };
+    assert!(s.wear(1, &hat));
+    assert!(!s.take_off(1, 1) && !s.take_off(9, 0));
+    assert!(s.take_off(1, 0));
+    assert!(s.player_mut(1).unwrap().worn.is_empty());
+}
