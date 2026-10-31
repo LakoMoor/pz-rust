@@ -214,6 +214,7 @@ impl Server {
         let air_wind = self.climate.wind_chill_temperature(&self.clock);
         let humidity = self.climate.humidity(&self.clock);
         let power = self.power_on();
+        let rain = self.climate.rain_at(&self.clock);
         for (id, p) in self.players.iter_mut() {
             let (sx, sy) = pz_sim::square_of(p.pos);
             let indoors = self.world.ensure(sx, sy) && self.world.column(sx, sy, p.z as usize).is_some_and(|c| c.room != -1);
@@ -222,6 +223,7 @@ impl Server {
             let h = (self.tick as u32).wrapping_mul(2654435761) ^ (*id as u32).wrapping_mul(40503);
             let input = self.inputs.get(id).copied().unwrap_or_default();
             let moving = input.dir[0] != 0.0 || input.dir[1] != 0.0;
+            p.tick_wetness(pz_sim::wetness::Weather { outside: !indoors, raining: rain > 0.0, rain_intensity: rain, air_temperature: air });
             p.tick_thermo(air, air_wind, humidity, input.run && moving, 86400.0 / (self.clock.day_seconds * pz_sim::TICK_HZ), indoors);
             p.tick_needs(30.0 / (self.clock.day_seconds / 60.0), input.run && moving);
             p.tick_infection(self.world_hours, self.mortality, (h >> 8) as f32 / (1u32 << 24) as f32);
