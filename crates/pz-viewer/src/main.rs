@@ -60,6 +60,7 @@ impl Scene {
                 for x in (x0.div_euclid(8) * 8 - 8..=x1).step_by(8) { self.world.ensure(x, y); }
             }
             let zoff = -(z as f32) * LEVEL_PX;
+            let has_barricades = self.world.has_barricades();
             // Pass 1: ground layer of every square. Pass 2: everything above, back to front.
             for pass in 0..2 {
                 for d in (x0 + y0)..=(x1 + y1) {
@@ -78,6 +79,23 @@ impl Scene {
                                     uv: [s.x as f32 / pw, s.y as f32 / ph, (s.x + s.w) as f32 / pw, (s.y + s.h) as f32 / ph],
                                     color: [1.0; 4], layer: 0.0,
                                 });
+                            }
+                        }
+                        if pass == 1 && has_barricades {
+                            for north in [true, false] {
+                                let Some(b) = self.world.barricade((x, y, z, north)) else { continue };
+                                // Planks as brown slats across the opening, metal as one grey panel on the edge's midpoint.
+                                let f = pos_to_screen(if north { [x as f32 + 0.5, y as f32] } else { [x as f32, y as f32 + 0.5] });
+                                let base = f[1] - z as f32 * LEVEL_PX;
+                                if b.metal > 0 || b.metal_bar > 0 {
+                                    let col = if b.metal > 0 { [0.55, 0.57, 0.6, 1.0] } else { [0.35, 0.36, 0.4, 1.0] };
+                                    emit(&mut inst, &mut batches, WHITE, Instance { pos: [f[0] - 24.0, base - 100.0], size: [48.0, 96.0], uv: WHITE_UV, color: col, layer: 0.0 });
+                                } else {
+                                    for (i, hp) in b.planks.iter().enumerate().filter(|(_, hp)| **hp > 0) {
+                                        let shade = 0.35 + 0.25 * (*hp as f32 / 1000.0).min(1.0);
+                                        emit(&mut inst, &mut batches, WHITE, Instance { pos: [f[0] - 24.0, base - 24.0 - i as f32 * 24.0], size: [48.0, 12.0], uv: WHITE_UV, color: [shade, shade * 0.7, 0.2, 1.0], layer: 0.0 });
+                                    }
+                                }
                             }
                         }
                         if pass == 1 {
@@ -117,13 +135,15 @@ struct Args {
     connect: Option<String>,
     pz: PathBuf, map: String, at: [f32; 2], zoom: f32, size: (u32, u32), shot: Option<PathBuf>,
     climate: pz_net::ClimateOptions,
+    /// Nail planks over every door within 25 squares of `--at` (a demo for screenshots).
+    barricade_demo: bool,
 }
 
 fn parse_args() -> Args {
     let mut a = Args {
         connect: None,
         pz: std::env::var("PZ_DIR").map(PathBuf::from).unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into()),
-        map: "Muldraugh, KY".into(), at: [12700.0, 1700.0], zoom: 0.5, size: (1600, 900), shot: None, climate: Default::default(),
+        map: "Muldraugh, KY".into(), at: [12700.0, 1700.0], zoom: 0.5, size: (1600, 900), shot: None, climate: Default::default(), barricade_demo: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
@@ -134,6 +154,7 @@ fn parse_args() -> Args {
             "--connect" => a.connect = Some(v()),
             "--map" => a.map = v(),
             "--shot" => a.shot = Some(v().into()),
+            "--barricade-demo" => a.barricade_demo = true,
             "--zoom" => a.zoom = v().parse().unwrap(),
             "--at" => { let s = v(); let (x, y) = s.split_once(',').unwrap(); a.at = [x.parse().unwrap(), y.parse().unwrap()]; }
             "--size" => { let s = v(); let (w, h) = s.split_once('x').unwrap(); a.size = (w.parse().unwrap(), h.parse().unwrap()); }
@@ -169,6 +190,16 @@ fn make_scene(a: &Args) -> Scene {
         .map(|&(dx, dy)| (sx + dx, sy + dy))
         .filter(|&(x, y)| world.has_floor(x, y, 0) && world.flags(x, y, 0) & pz_world::flag::SOLID == 0)
         .map(|(x, y)| Zombie::new(x as f32, y as f32, 0)).collect();
+    if a.barricade_demo {
+        for y in cy - 25..cy + 25 { for x in cx - 25..cx + 25 {
+            let f = world.flags(x, y, 0);
+            let planks = (x + y).rem_euclid(3) as usize + 1;
+            for (door, north) in [(f & pz_world::flag::DOOR_N != 0, true), (f & pz_world::flag::DOOR_W != 0, false)] {
+                if !door { continue; }
+                if (x + y) % 5 == 0 { world.add_metal((x, y, 0, north), (x + y) % 2 == 0); } else { for _ in 0..planks { world.add_plank((x, y, 0, north), pz_world::PLANK_HEALTH); } }
+            }
+        } }
+    }
     let (clock, climate) = a.climate.build();
     Scene { assets, world, player: Player::new(sx as f32, sy as f32), zombies, clock, climate }
 }

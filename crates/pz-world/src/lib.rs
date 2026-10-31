@@ -258,6 +258,8 @@ impl World {
         self.barricades = list.into_iter().collect();
     }
 
+    pub fn has_barricades(&self) -> bool { !self.barricades.is_empty() }
+
     pub fn barricade(&self, edge: (i32, i32, usize, bool)) -> Option<Barricade> { self.barricades.get(&edge).copied() }
 
     /// Hit the barricade on this edge; returns its health after the hit, or `None` if there is none. A destroyed
