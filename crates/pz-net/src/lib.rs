@@ -260,6 +260,8 @@ impl Server {
                     } else {
                         self.world.add_plank(edge, pz_world::PLANK_HEALTH);
                     }
+                } else if let Some(bars) = self.world.remove_metal(edge) {
+                    if let Some((db, inv)) = stock { let _ = inv.add(db, if bars { METAL_BAR } else { SHEET_METAL }, 1); }
                 } else if self.world.remove_plank(edge).is_some() {
                     if let Some((db, inv)) = stock { let _ = inv.add(db, PLANK, 1); }
                 }

@@ -314,4 +314,7 @@ fn metal_barricades_need_their_item_and_bare_edges() {
     s.handle(1, ClientMsg::BarricadeMetal(true));
     assert_eq!(s.world().barricade(edge).unwrap().metal_bar, pz_world::METAL_BAR_HEALTH);
     assert_eq!(s.pack_mut(1).unwrap().count("Base.MetalBar"), 0);
+    s.handle(1, ClientMsg::Unbarricade);
+    assert!(s.world().barricade(edge).is_none(), "the bars come off");
+    assert_eq!(s.pack_mut(1).unwrap().count("Base.MetalBar"), 1);
 }

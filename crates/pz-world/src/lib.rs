@@ -218,6 +218,14 @@ impl World {
         Some(hp)
     }
 
+    /// Take a metal barricade off (`removeMetal` / `removeMetalBar`): `Some(true)` for bars, `Some(false)` for a sheet.
+    pub fn remove_metal(&mut self, edge: (i32, i32, usize, bool)) -> Option<bool> {
+        let b = self.barricades.get_mut(&edge)?;
+        let bars = if b.metal > 0 { b.metal = 0; false } else if b.metal_bar > 0 { b.metal_bar = 0; true } else { return None };
+        if b.is_destroyed() { self.barricades.remove(&edge); }
+        Some(bars)
+    }
+
     /// Bolt on a metal-bar or metal-sheet barricade; false if the edge already carries planks or metal.
     pub fn add_metal(&mut self, edge: (i32, i32, usize, bool), bars: bool) -> bool {
         let b = self.barricades.entry(edge).or_default();
