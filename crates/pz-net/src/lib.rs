@@ -38,7 +38,12 @@ pub struct PlayerState { pub id: ClientId, pub pos: [f32; 2], pub z: u8, pub hea
 pub struct ZombieState { pub pos: [f32; 2], pub z: u8, pub health: f32 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ServerMsg { Snapshot { tick: u32, you: ClientId, players: Vec<PlayerState>, zombies: Vec<ZombieState>, doors: Vec<(i32, i32, u8)> } }
+pub enum ServerMsg { Snapshot { tick: u32, you: ClientId, players: Vec<PlayerState>, zombies: Vec<ZombieState>, doors: Vec<(i32, i32, u8)>,
+    /// Barricades: square, floor, whether on the north edge, and the plank / metal-bar / metal-sheet health.
+    barricades: Vec<BarricadeState> } }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BarricadeState { pub x: i32, pub y: i32, pub z: u8, pub north: bool, pub planks: [u16; 4], pub metal_bar: u16, pub metal: u16 }
 
 #[derive(Debug, PartialEq)]
 pub enum DecodeError { Truncated, BadTag(u8) }
@@ -96,7 +101,7 @@ impl ClientMsg {
 
 impl ServerMsg {
     pub fn encode(&self) -> Vec<u8> {
-        let ServerMsg::Snapshot { tick, you, players, zombies, doors } = self;
+        let ServerMsg::Snapshot { tick, you, players, zombies, doors, barricades } = self;
         let mut w = W(vec![]);
         w.u8(2); w.u32(*tick); w.u32(*you); w.u32(players.len() as u32);
         for p in players { w.u32(p.id); w.f32(p.pos[0]); w.f32(p.pos[1]); w.u8(p.z); w.f32(p.health); w.u16(p.ammo); }
@@ -104,6 +109,12 @@ impl ServerMsg {
         for z in zombies { w.f32(z.pos[0]); w.f32(z.pos[1]); w.u8(z.z); w.f32(z.health); }
         w.u32(doors.len() as u32);
         for (x, y, z) in doors { w.u32(*x as u32); w.u32(*y as u32); w.u8(*z); }
+        w.u32(barricades.len() as u32);
+        for b in barricades {
+            w.u32(b.x as u32); w.u32(b.y as u32); w.u8(b.z); w.u8(b.north as u8);
+            for p in b.planks { w.u16(p); }
+            w.u16(b.metal_bar); w.u16(b.metal);
+        }
         w.0
     }
     pub fn decode(b: &[u8]) -> Result<Self, DecodeError> {
@@ -125,7 +136,13 @@ impl ServerMsg {
                 let nd = r.u32()?;
                 let mut doors = Vec::new();
                 for _ in 0..nd { doors.push((r.u32()? as i32, r.u32()? as i32, r.u8()?)); }
-                Ok(ServerMsg::Snapshot { tick, you, players, zombies, doors })
+                let nb = r.u32()?;
+                let mut barricades = Vec::new();
+                for _ in 0..nb {
+                    let (x, y, z, north) = (r.u32()? as i32, r.u32()? as i32, r.u8()?, r.u8()? != 0);
+                    barricades.push(BarricadeState { x, y, z, north, planks: [r.u16()?, r.u16()?, r.u16()?, r.u16()?], metal_bar: r.u16()?, metal: r.u16()? });
+                }
+                Ok(ServerMsg::Snapshot { tick, you, players, zombies, doors, barricades })
             }
             t => Err(DecodeError::BadTag(t)),
         }
@@ -308,6 +325,8 @@ impl Server {
             players: self.players.iter().map(|(id, p)| PlayerState { id: *id, pos: p.pos, z: p.z as u8, health: p.health, ammo: self.guns.get(id).map_or(0, |g| g.ammo as u16) }).collect(),
             zombies: self.zombies.iter().map(|z| ZombieState { pos: z.pos, z: z.z as u8, health: z.health }).collect(),
             doors: self.world.open_doors().into_iter().map(|(x, y, z)| (x, y, z as u8)).collect(),
+            barricades: self.world.barricades().into_iter().map(|((x, y, z, north), b)| BarricadeState {
+                x, y, z: z as u8, north, planks: b.planks.map(|p| p.clamp(0, 65535) as u16), metal_bar: b.metal_bar.clamp(0, 65535) as u16, metal: b.metal.clamp(0, 65535) as u16 }).collect(),
         }
     }
 }

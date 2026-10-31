@@ -238,6 +238,18 @@ impl World {
         None
     }
 
+    /// Every barricade as `(edge, state)` in a stable order (for network snapshots).
+    pub fn barricades(&self) -> Vec<((i32, i32, usize, bool), Barricade)> {
+        let mut v: Vec<_> = self.barricades.iter().map(|(k, b)| (*k, *b)).collect();
+        v.sort_unstable_by_key(|(k, _)| *k);
+        v
+    }
+
+    /// Replace the barricades with those a server sent (client side of a snapshot).
+    pub fn set_barricades(&mut self, list: impl IntoIterator<Item = ((i32, i32, usize, bool), Barricade)>) {
+        self.barricades = list.into_iter().collect();
+    }
+
     pub fn barricade(&self, edge: (i32, i32, usize, bool)) -> Option<Barricade> { self.barricades.get(&edge).copied() }
 
     /// Hit the barricade on this edge; returns its health after the hit, or `None` if there is none. A destroyed

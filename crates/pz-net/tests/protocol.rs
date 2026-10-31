@@ -12,6 +12,7 @@ fn messages_round_trip_and_reject_garbage() {
         tick: 3,
         you: 1,
         doors: vec![(5, -3, 1)],
+        barricades: vec![BarricadeState { x: 4, y: -2, z: 0, north: true, planks: [1000, 640, 0, 0], metal_bar: 0, metal: 0 }],
         players: vec![PlayerState { id: 1, pos: [1.5, 2.5], z: 1, health: 90.0, ammo: 12 }],
         zombies: vec![ZombieState { pos: [0.0, 4.0], z: 0, health: 3.0 }],
     };
@@ -121,7 +122,7 @@ fn snapshots_report_each_players_remaining_ammo() {
     let ammo = |id| players.iter().find(|p| p.id == id).unwrap().ammo;
     assert_eq!((ammo(1), ammo(2)), (2, 3));
     // The wire format carries it.
-    let snap = ServerMsg::Snapshot { tick: 1, you: 1, players, zombies: vec![], doors: vec![] };
+    let snap = ServerMsg::Snapshot { tick: 1, you: 1, players, zombies: vec![], doors: vec![], barricades: vec![] };
     assert_eq!(ServerMsg::decode(&snap.encode()), Ok(snap));
 }
 
@@ -284,4 +285,7 @@ fn barricading_spends_planks_from_the_pockets_and_removing_returns_them() {
     s.handle(1, ClientMsg::Unbarricade);
     assert_eq!(s.world().barricade(edge).unwrap().num_planks(), 1);
     assert_eq!(s.pack_mut(1).unwrap().count("Base.Plank"), 1);
+    let ServerMsg::Snapshot { barricades, .. } = s.tick();
+    assert_eq!(barricades.len(), 1);
+    assert_eq!((barricades[0].x, barricades[0].y, barricades[0].north, barricades[0].planks), (dx, dy, true, [1000, 0, 0, 0]));
 }

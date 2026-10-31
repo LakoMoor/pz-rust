@@ -329,8 +329,10 @@ impl ApplicationHandler for App {
                     self.acc -= TICK_DT;
                 }
                 if let Some(net) = self.net.as_mut() {
-                    if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, doors, .. })) = net.latest_snapshot() {
+                    if let Ok(Some(pz_net::ServerMsg::Snapshot { you, players, zombies, doors, barricades, .. })) = net.latest_snapshot() {
                         self.scene.world.set_open_doors(doors.into_iter().map(|(x, y, z)| (x, y, z as usize)));
+                        self.scene.world.set_barricades(barricades.into_iter().map(|b| ((b.x, b.y, b.z as usize, b.north), pz_world::Barricade {
+                            planks: b.planks.map(i32::from), metal_bar: b.metal_bar as i32, metal: b.metal as i32 })));
                         if let Some(me) = players.iter().find(|p| p.id == you) {
                             if let Some(g) = self.gun.as_mut() { g.ammo = me.ammo as u32; }
                             let pl = &mut self.scene.player;
