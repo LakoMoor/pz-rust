@@ -58,11 +58,13 @@ pub struct Garment {
     /// Item wetness 0..=100 and condition 0..=100.
     pub wetness: f32,
     pub condition: f32,
+    /// Normalised `BodyLocation` (lowercase, no `base:` prefix or underscores), e.g. `hat`, `tshirt`.
+    pub location: String,
 }
 
 impl Garment {
     pub fn new(blood_location: &str, insulation: f32, wind_resistance: f32) -> Garment {
-        Garment { parts: covered_parts(blood_location), insulation, wind_resistance, wetness: 0.0, condition: 100.0 }
+        Garment { parts: covered_parts(blood_location), insulation, wind_resistance, wetness: 0.0, condition: 100.0, location: String::new() }
     }
 }
 
@@ -102,5 +104,59 @@ pub fn soak(worn: &mut [Garment], delta: f32) {
             g.wetness = (g.wetness + delta / g.parts.len() as f32).clamp(0.0, 100.0);
             if delta > 0.0 { break; }
         }
+    }
+}
+
+/// Normalise a location id: `base:Hat`, `HAT` and `Hat` all become `hat`; `FULL_HAT` and `base:fullhat` match.
+pub fn norm_location(s: &str) -> String {
+    s.rsplit(':').next().unwrap_or("").chars().filter(|c| *c != '_').flat_map(char::to_lowercase).collect()
+}
+
+/// What the game's `BodyLocations.lua` says about the Human group: render order, mutually exclusive locations and
+/// locations that may hold several items.
+#[derive(Debug, Default, Clone)]
+pub struct Rules {
+    order: Vec<String>,
+    exclusive: std::collections::HashSet<(String, String)>,
+    multi: std::collections::HashSet<String>,
+}
+
+impl Rules {
+    /// Read `getOrCreateLocation`, `setExclusive` and `setMultiItem` calls from the script text.
+    pub fn from_lua(text: &str) -> Rules {
+        let mut r = Rules::default();
+        for line in text.lines() {
+            let line = line.split("--").next().unwrap_or("");
+            let Some(args) = line.trim().strip_prefix("group:").and_then(|l| l.split_once('(')) else { continue };
+            let ids: Vec<String> = args.1.split(',').filter_map(|a| a.trim().strip_prefix("ItemBodyLocation.")).map(|a| norm_location(a.trim_end_matches([')', ' ', ';']))).collect();
+            match (args.0, ids.as_slice()) {
+                ("getOrCreateLocation", [a]) => if !r.order.contains(a) { r.order.push(a.clone()) },
+                ("setExclusive", [a, b]) => { r.exclusive.insert((a.clone(), b.clone())); r.exclusive.insert((b.clone(), a.clone())); }
+                ("setMultiItem", [a]) if line.contains("true") => { r.multi.insert(a.clone()); }
+                _ => {}
+            }
+        }
+        r
+    }
+
+    pub fn is_exclusive(&self, a: &str, b: &str) -> bool { self.exclusive.contains(&(a.to_string(), b.to_string())) }
+    pub fn is_multi(&self, a: &str) -> bool { self.multi.contains(a) }
+    fn index(&self, loc: &str) -> usize { self.order.iter().position(|l| l == loc).unwrap_or(usize::MAX) }
+
+    /// `WornItems.setItem`: drop the garment already at this location (unless it holds several), drop everything
+    /// exclusive with it, then insert in render order. Returns the garments that had to come off.
+    pub fn wear(&self, worn: &mut Vec<Garment>, g: Garment) -> Vec<Garment> {
+        let mut removed = Vec::new();
+        if !self.is_multi(&g.location) {
+            if let Some(i) = worn.iter().position(|w| w.location == g.location) { removed.push(worn.remove(i)); }
+        }
+        let mut i = 0;
+        while i < worn.len() {
+            if self.is_exclusive(&g.location, &worn[i].location) { removed.push(worn.remove(i)); } else { i += 1; }
+        }
+        let mine = self.index(&g.location);
+        let at = worn.iter().position(|w| self.index(&w.location) > mine).unwrap_or(worn.len());
+        worn.insert(at, g);
+        removed
     }
 }

@@ -36,6 +36,8 @@ pub struct ItemDef {
     pub insulation: f32,
     pub wind_resistance: f32,
     pub blood_location: Vec<String>,
+    /// `BodyLocation` (e.g. `base:hat`): where it is worn.
+    pub body_location: String,
     /// `Tags = base:a;base:b`
     pub tags: Vec<String>,
 }
@@ -72,6 +74,7 @@ fn def(module: &str, b: &Block) -> ItemDef {
         bandage_power: num(b, "BandagePower"),
         insulation: num(b, "Insulation"),
         wind_resistance: num(b, "WindResistance"),
+        body_location: b.prop("BodyLocation").unwrap_or("").to_string(),
         blood_location: b.prop("BloodLocation").map(|t| t.split(';').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
         small_blade: b.prop("Categories").is_some_and(|c| c.contains("smallblade")),
     }

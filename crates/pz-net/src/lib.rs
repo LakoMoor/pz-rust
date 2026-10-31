@@ -143,6 +143,8 @@ pub struct Server {
     pub mortality: u8,
     /// `ElecShutModifier`: the grid works until this many world days have passed (`doesPowerGridExist`).
     pub elec_shut_days: i32,
+    /// Body-location order and exclusions (`BodyLocations.lua`); empty until loaded.
+    pub clothing_rules: pz_sim::clothing::Rules,
     /// Calendar and climate driving `clock` (dawn, dusk, daily fog); the game starts on 1993-07-09, like the original.
     pub climate: pz_sim::climate::Climate,
 }
@@ -151,7 +153,7 @@ impl Server {
     pub fn new(world: World, zombies: Vec<Zombie>) -> Self {
         let mut clock = GameClock::default();
         let climate = new_climate(&mut clock);
-        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, world_hours: 0.0, mortality: 5, elec_shut_days: 14, climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
+        Self { world, tick: 0, players: BTreeMap::new(), inputs: BTreeMap::new(), zombies, weapon: Weapon::FISTS, clock, world_hours: 0.0, mortality: 5, elec_shut_days: 14, clothing_rules: Default::default(), climate, gun: None, guns: BTreeMap::new(), kit: None, packs: BTreeMap::new() }
     }
 
     /// Replace the clock and climate (e.g. from command-line options).
@@ -206,7 +208,8 @@ impl Server {
         let Some(p) = self.players.get_mut(&player) else { return false };
         let parts: Vec<usize> = def.blood_location.iter().flat_map(|l| pz_sim::clothing::covered_parts(l)).collect();
         if parts.is_empty() { return false; }
-        p.worn.push(pz_sim::clothing::Garment { parts, insulation: def.insulation, wind_resistance: def.wind_resistance, wetness: 0.0, condition: 100.0 });
+        let g = pz_sim::clothing::Garment { parts, insulation: def.insulation, wind_resistance: def.wind_resistance, wetness: 0.0, condition: 100.0, location: pz_sim::clothing::norm_location(&def.body_location) };
+        self.clothing_rules.wear(&mut p.worn, g);
         true
     }
 
