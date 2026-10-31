@@ -13,6 +13,7 @@ pub mod climate;
 pub mod jrandom;
 pub mod thermo;
 pub mod cold;
+pub mod stress;
 pub mod wetness;
 
 pub const TICK_HZ: f32 = 30.0;
@@ -47,6 +48,8 @@ pub struct Player {
     /// `PAIN` stat: rises toward the body's pain slowly (1/500 of the gap per tick) and drops at once when it eases.
     pub pain_stat: f32,
     pub needs: needs::Needs,
+    /// `STRESS` stat, 0..=1.
+    pub stress: f32,
     pub thermo: thermo::Thermoregulator,
     pub cold: cold::Cold,
     /// `WETNESS` stat (running blend of the part values).
@@ -65,13 +68,15 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, needs: needs::Needs::default(), thermo: thermo::Thermoregulator::default(), cold: cold::Cold::default(), wetness_stat: 0.0, wetness: [0.0; body::PARTS], facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, needs: needs::Needs::default(), stress: 0.0, thermo: thermo::Thermoregulator::default(), cold: cold::Cold::default(), wetness_stat: 0.0, wetness: [0.0; body::PARTS], facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     /// Hunger and thirst for one tick; `delta_minutes_per_day` comes from the clock (`30 / minutes per day`).
     pub fn tick_needs(&mut self, delta_minutes_per_day: f32, running: bool) {
         let (t0, f0) = (self.needs.thirst, self.needs.fatigue);
         self.needs.tick(delta_minutes_per_day, running, false);
+        let b = &self.body;
+        self.stress = stress::tick(self.stress, delta_minutes_per_day, b.parts.iter().any(|p| p.bite_time > 0.0), b.parts.iter().any(|p| p.scratch_time > 0.0), self.infected);
         // Heat and cold change how fast the body burns water and tires (the thermoregulator's multipliers).
         self.needs.thirst = (t0 + (self.needs.thirst - t0) * self.thermo.fluids_multiplier).clamp(0.0, 1.0);
         self.needs.fatigue = (f0 + (self.needs.fatigue - f0) * self.thermo.fatigue_multiplier).clamp(0.0, 1.0);
