@@ -5,3 +5,4 @@ edition.workspace = true
 
 [dependencies]
 pz-scripts = { path = "../pz-scripts" }
+lewton = "0.10"
