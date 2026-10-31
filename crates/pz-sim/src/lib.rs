@@ -285,6 +285,10 @@ pub const GET_UP_TICKS: u32 = 75;
 pub const FALL_DOWN_TICKS: u32 = 41;
 /// Thump animations (`ThumpState` picks `DoorClaw`, `Door` or `DoorBang` at random): `(loop ticks, ThumpFrame ticks)` (the claw lands twice per loop).
 /// Each is `clip length / speed scale (0.8)` and `time_pc` of the event, in 30 Hz ticks (see the pz-anim test).
+/// What a zombie is hammering on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ThumpTarget { Door((i32, i32, usize)), Window((i32, i32, usize, bool)) }
+
 pub const THUMP_ANIMS: [(u32, &[u32]); 3] = [(160, &[37, 117]), (38, &[21]), (75, &[64])];
 const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
 /// `BodyDamage.healthReductionFromSevereBadMoodles`.
@@ -362,7 +366,7 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     /// Ticks left in the fall-down animation (`ZombieFallDownState`); the reanimate timer starts after it.
     fall_down: u32,
     /// Door being thumped: its key, the thump animation (index into [`THUMP_ANIMS`]) and ticks into the current loop.
-    thump: Option<((i32, i32, usize), usize, u32)>,
+    thump: Option<(ThumpTarget, usize, u32)>,
     /// `IsoZombie.strength` (lore setting: 5 superhuman, 3 normal, 1 weak): damage per door hit.
     pub strength: i32,
     /// Zombies within 1.5 tiles including this one (`getSurroundingThumpers`); the server keeps it current.
@@ -579,7 +583,12 @@ impl Zombie {
             let to = if a == 0 { (from.0 + sgn, from.1) } else { (from.0, from.1 + sgn) };
             if let Some(key) = world.closed_door_between(from, to, self.z) {
                 let kind = self.rand(3) as usize;
-                self.thump = Some((key, kind, 0));
+                self.thump = Some((ThumpTarget::Door(key), kind, 0));
+                return true;
+            }
+            if let Some(key) = world.intact_window_between(from, to, self.z) {
+                let kind = self.rand(3) as usize;
+                self.thump = Some((ThumpTarget::Window(key), kind, 0));
                 return true;
             }
         }
@@ -589,14 +598,26 @@ impl Zombie {
     /// `ThumpState.execute`: advance the thump animation; at its `ThumpFrame` event the door takes damage. Doors only
     /// give way when at least two zombies crowd against them (`IsoDoor.Thump`: `tot >= 2`). Returns true while busy.
     fn thump_door(&mut self, world: &mut World) -> bool {
-        let Some((key, kind, t)) = self.thump else { return false };
-        if world.door_open(key.0, key.1, key.2) { self.thump = None; return false; }
+        let Some((target, kind, t)) = self.thump else { return false };
         let (period, events) = THUMP_ANIMS[kind];
-        if events.contains(&t) && self.thumpers >= 2 {
-            let broke = world.damage_door(key.0, key.1, key.2, self.strength) == Some(0);
-            if broke { self.thump = None; return false; }
+        let gone = match target {
+            ThumpTarget::Door(k) => world.door_open(k.0, k.1, k.2),
+            ThumpTarget::Window(k) => world.window_smashed(k),
+        };
+        if gone { self.thump = None; return false; }
+        if events.contains(&t) {
+            match target {
+                ThumpTarget::Door(k) if self.thumpers >= 2 => {
+                    if world.damage_door(k.0, k.1, k.2, self.strength) == Some(0) { self.thump = None; return false; }
+                }
+                // A window gives way to a single zombie (`IsoWindow.Thump` has no crowd check).
+                ThumpTarget::Window(k) => {
+                    if world.damage_window(k, self.strength) == 0 { self.thump = None; return false; }
+                }
+                _ => {}
+            }
         }
-        self.thump = Some((key, kind, (t + 1) % period));
+        self.thump = Some((target, kind, (t + 1) % period));
         true
     }
 
@@ -620,6 +641,11 @@ impl Zombie {
             let edge = [from.0, from.1][a] as f32 + 0.5 * sgn as f32;
             if (self.pos[a] - edge).abs() > 0.2 { continue; }
             if !world.can_step(from, to, self.z) && world.hurdle(from, to, self.z) {
+                if let Some(key) = world.intact_window_between(from, to, self.z) {
+                    let kind = self.rand(3) as usize;
+                    self.thump = Some((ThumpTarget::Window(key), kind, 0));
+                    return true;
+                }
                 self.climb = Some((CLIMB_TICKS, to));
                 self.facing = if a == 0 { [sgn as f32, 0.0] } else { [0.0, sgn as f32] };
                 return true;

@@ -62,6 +62,8 @@ fn tile_flags(props: &[(String, String)]) -> u16 {
 
 /// `IsoDoor.health` for a plain wooden door.
 pub const DOOR_HEALTH: i32 = 500;
+/// `IsoWindow.health` for a plain window.
+pub const WINDOW_HEALTH: i32 = 50;
 
 pub struct World {
     dir: PathBuf,
@@ -72,6 +74,10 @@ pub struct World {
     /// Hit points left on doors that have been attacked (a fresh wooden door has [`DOOR_HEALTH`]) and doors broken down.
     door_health: HashMap<(i32, i32, usize), i32>,
     broken_doors: HashSet<(i32, i32, usize)>,
+    /// Glass left in windows that have been attacked, keyed by the square owning the edge and whether it is the north
+    /// edge; windows missing from the map are intact. Broken windows are in `smashed_windows`.
+    window_health: HashMap<(i32, i32, usize, bool), i32>,
+    smashed_windows: HashSet<(i32, i32, usize, bool)>,
 }
 
 /// One tile column: ordered tile names, bottom first.
@@ -88,7 +94,7 @@ fn load_cell(dir: &Path, cx: i32, cy: i32) -> Option<Cell> {
 impl World {
     /// `map_dir` is e.g. `<PZ>/media/maps/Muldraugh, KY`.
     pub fn new(map_dir: impl Into<PathBuf>) -> Self {
-        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new(), door_health: HashMap::new(), broken_doors: HashSet::new() }
+        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new(), door_health: HashMap::new(), broken_doors: HashSet::new(), window_health: HashMap::new(), smashed_windows: HashSet::new() }
     }
 
     /// Load collision flags from the game's `*.tiles` definition files in `media/`.
@@ -141,6 +147,27 @@ impl World {
         if left == 0 { self.open_doors.insert(key); self.broken_doors.insert(key); }
         Some(left)
     }
+
+    /// The intact window on the edge between two orthogonally adjacent squares, if any. Windows start closed and
+    /// whole; zombies have to smash them before they can climb through.
+    pub fn intact_window_between(&mut self, a: (i32, i32), b: (i32, i32), z: usize) -> Option<(i32, i32, usize, bool)> {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        if dx.abs() + dy.abs() != 1 { return None; }
+        let (sq, north) = if dx > 0 || dy > 0 { (b, dy > 0) } else { (a, dy < 0) };
+        let bit = if north { flag::WINDOW_N } else { flag::WINDOW_W };
+        let key = (sq.0, sq.1, z, north);
+        (self.flags(sq.0, sq.1, z) & bit != 0 && !self.smashed_windows.contains(&key)).then_some(key)
+    }
+
+    /// Hit a window for `damage` (`IsoWindow.damage`): at zero the glass is smashed for good. Returns the glass left.
+    pub fn damage_window(&mut self, key: (i32, i32, usize, bool), damage: i32) -> i32 {
+        let hp = self.window_health.entry(key).or_insert(WINDOW_HEALTH);
+        *hp = (*hp - damage).max(0);
+        if *hp == 0 { self.smashed_windows.insert(key); }
+        *hp
+    }
+
+    pub fn window_smashed(&self, key: (i32, i32, usize, bool)) -> bool { self.smashed_windows.contains(&key) }
 
     pub fn door_broken(&self, x: i32, y: i32, z: usize) -> bool { self.broken_doors.contains(&(x, y, z)) }
 

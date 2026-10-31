@@ -42,7 +42,8 @@ fn zombie_climbs_over_a_hurdle_to_reach_the_player() {
     let mut player = Player::new(b.0 as f32 + 1.5, b.1 as f32);
     let mut z = Zombie::new(a.0 as f32, a.1 as f32, 0);
     let (mut climbed, mut crossed) = (false, false);
-    for _ in 0..(20 * TICK_HZ as u32) {
+    // A closed window has to be smashed first (50 glass, 3 per hit), which takes a while.
+    for _ in 0..(120 * TICK_HZ as u32) {
         z.tick(&mut player, &mut w);
         climbed |= z.is_climbing();
         if z.pos[0] > b.0 as f32 - 0.4 { crossed = true; break; }
@@ -137,4 +138,24 @@ fn fall_down_ticks_match_the_games_animation_data() {
     let node = pz_anim::parse_node(&std::fs::read_to_string(m.join("AnimSets/zombie/falldown/default.xml")).unwrap(), None);
     assert_eq!(node.anim_name, "Zombie_Death");
     assert_eq!((len / node.speed_scale * TICK_HZ).round() as u32, FALL_DOWN_TICKS);
+}
+
+#[test]
+fn zombies_smash_closed_windows_one_hit_at_a_time_before_climbing() {
+    let Some(mut w) = world() else { return };
+    let (a, b) = hurdle_pair(&mut w).expect("a climbable edge near Muldraugh");
+    let Some(key) = w.intact_window_between(a, b, 0) else { return }; // this edge is a fence, not a window
+    let mut player = Player::new(b.0 as f32 + 1.5, b.1 as f32);
+    let mut z = Zombie::new(a.0 as f32, a.1 as f32, 0);
+    let (mut hits_seen, mut climbed_before_smash) = (0, false);
+    let mut last = pz_world::WINDOW_HEALTH;
+    for _ in 0..(120 * TICK_HZ as u32) {
+        z.tick(&mut player, &mut w);
+        let left = if w.window_smashed(key) { 0 } else { w.damage_window(key, 0) };
+        if left < last { hits_seen += 1; assert!(last - left == 3 || left == 0, "strength 3 per hit"); last = left; }
+        if z.is_climbing() && !w.window_smashed(key) { climbed_before_smash = true; }
+        if w.window_smashed(key) { break; }
+    }
+    assert!(w.window_smashed(key) && !climbed_before_smash, "smashed {} hits {hits_seen}", w.window_smashed(key));
+    assert!(hits_seen >= 16, "{hits_seen}");
 }
