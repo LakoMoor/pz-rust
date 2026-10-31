@@ -9,6 +9,9 @@ pub mod udp;
 
 pub type ClientId = u32;
 
+/// The item id of the planks used to barricade.
+const PLANK: &str = "Base.Plank";
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMsg {
     Input { seq: u32, dir: [f32; 2], run: bool },
@@ -22,6 +25,8 @@ pub enum ClientMsg {
     Reload,
     /// Nail a plank over the nearest door or window.
     Barricade,
+    /// Pull the last plank off the nearest barricade.
+    Unbarricade,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +75,7 @@ impl ClientMsg {
             ClientMsg::Shoot => w.u8(4),
             ClientMsg::Reload => w.u8(5),
             ClientMsg::Barricade => w.u8(6),
+            ClientMsg::Unbarricade => w.u8(7),
         }
         w.0
     }
@@ -82,6 +88,7 @@ impl ClientMsg {
             4 => Ok(ClientMsg::Shoot),
             5 => Ok(ClientMsg::Reload),
             6 => Ok(ClientMsg::Barricade),
+            7 => Ok(ClientMsg::Unbarricade),
             t => Err(DecodeError::BadTag(t)),
         }
     }
@@ -167,6 +174,8 @@ impl Server {
     pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
     /// Enable reloading: `def` is the wielded firearm's script and each player joins carrying `spare_rounds` of its ammo.
     pub fn set_ammo_kit(&mut self, db: pz_items::ItemDb, def: pz_items::ItemDef, spare_rounds: u32) { self.kit = Some((db, def, spare_rounds)); }
+    /// A player's pockets, when the server was given an item kit.
+    pub fn pack_mut(&mut self, id: ClientId) -> Option<&mut pz_items::Inventory> { self.packs.get_mut(&id) }
     pub fn world(&self) -> &World { &self.world }
     pub fn player_mut(&mut self, id: ClientId) -> Option<&mut Player> { self.players.get_mut(&id) }
 
@@ -204,10 +213,21 @@ impl Server {
             ClientMsg::Interact => {
                 if let Some(p) = self.players.get(&id) { p.interact(&mut self.world); }
             }
-            ClientMsg::Barricade => {
-                if let Some(p) = self.players.get(&id) {
-                    let (x, y) = (p.pos[0].floor() as i32, p.pos[1].floor() as i32);
-                    if let Some(edge) = self.world.barricadable_edge(x, y, p.z) { self.world.add_plank(edge, pz_world::PLANK_HEALTH); }
+            ClientMsg::Barricade | ClientMsg::Unbarricade => {
+                let Some(p) = self.players.get(&id) else { return };
+                let (x, y, z) = (p.pos[0].floor() as i32, p.pos[1].floor() as i32, p.z);
+                let Some(edge) = self.world.barricadable_edge(x, y, z) else { return };
+                // With an item database the planks come from and go back to the player's pockets.
+                let stock = self.kit.as_ref().map(|k| &k.0).zip(self.packs.get_mut(&id));
+                if msg == ClientMsg::Barricade {
+                    if let Some((db, inv)) = stock {
+                        if inv.count(PLANK) == 0 || self.world.barricade(edge).is_some_and(|b| b.num_planks() >= 4) { return; }
+                        if self.world.add_plank(edge, pz_world::PLANK_HEALTH) { inv.remove(db, PLANK, 1); }
+                    } else {
+                        self.world.add_plank(edge, pz_world::PLANK_HEALTH);
+                    }
+                } else if self.world.remove_plank(edge).is_some() {
+                    if let Some((db, inv)) = stock { let _ = inv.add(db, PLANK, 1); }
                 }
             }
         }

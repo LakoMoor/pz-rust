@@ -256,3 +256,32 @@ fn barricade_message_nails_a_plank_over_the_nearest_door() {
     let b = s.world().barricade((dx, dy, 0, true)).expect("barricaded");
     assert_eq!(b.num_planks(), 4, "the fifth plank does not fit");
 }
+
+#[test]
+fn barricading_spends_planks_from_the_pockets_and_removing_returns_them() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let media = std::path::PathBuf::from(dir).join("media");
+    if !media.is_dir() { return; }
+    assert_eq!(ClientMsg::decode(&ClientMsg::Unbarricade.encode()), Ok(ClientMsg::Unbarricade));
+    let db = pz_items::ItemDb::load(&media.join("scripts")).unwrap();
+    let def = db.get("Base.Pistol").cloned().unwrap();
+    let mut w = World::new(media.join("maps").join("Muldraugh, KY"));
+    w.load_tile_flags(&media);
+    let (mut dx, mut dy) = (0, 0);
+    'f: for y in 1500..1800 { for x in 12500..12800 {
+        if w.flags(x, y, 0) & pz_world::flag::DOOR_N != 0 { (dx, dy) = (x, y); break 'f; }
+    } }
+    let mut s = Server::new(w, vec![]);
+    s.set_ammo_kit(pz_items::ItemDb::load(&media.join("scripts")).unwrap(), def, 0);
+    s.join(1, dx as f32 + 0.5, dy as f32 + 0.5);
+    let edge = (dx, dy, 0, true);
+    s.handle(1, ClientMsg::Barricade);
+    assert!(s.world().barricade(edge).is_none(), "no planks, no barricade");
+    s.pack_mut(1).unwrap().add(&db, "Base.Plank", 2).unwrap();
+    for _ in 0..5 { s.handle(1, ClientMsg::Barricade); }
+    assert_eq!(s.world().barricade(edge).unwrap().num_planks(), 2);
+    assert_eq!(s.pack_mut(1).unwrap().count("Base.Plank"), 0);
+    s.handle(1, ClientMsg::Unbarricade);
+    assert_eq!(s.world().barricade(edge).unwrap().num_planks(), 1);
+    assert_eq!(s.pack_mut(1).unwrap().count("Base.Plank"), 1);
+}

@@ -209,6 +209,15 @@ impl World {
         match b.planks.iter_mut().find(|p| **p <= 0) { Some(p) => { *p = health.clamp(1, PLANK_HEALTH); true } None => false }
     }
 
+    /// Pull the last plank off (`IsoBarricade.removePlank`), returning its health; `None` if there are no planks.
+    pub fn remove_plank(&mut self, edge: (i32, i32, usize, bool)) -> Option<i32> {
+        let b = self.barricades.get_mut(&edge)?;
+        let slot = b.planks.iter_mut().rev().find(|p| **p > 0)?;
+        let hp = std::mem::replace(slot, 0);
+        if b.is_destroyed() { self.barricades.remove(&edge); }
+        Some(hp)
+    }
+
     /// Bolt on a metal-bar or metal-sheet barricade; false if the edge already carries planks or metal.
     pub fn add_metal(&mut self, edge: (i32, i32, usize, bool), bars: bool) -> bool {
         let b = self.barricades.entry(edge).or_default();
