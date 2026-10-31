@@ -127,3 +127,14 @@ fn get_up_ticks_match_the_games_animation_data() {
     assert_eq!(node.anim_name, "Zombie_GetUp");
     assert_eq!((len / node.speed_scale * TICK_HZ).round() as u32, GET_UP_TICKS);
 }
+
+#[test]
+fn fall_down_ticks_match_the_games_animation_data() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let m = std::path::PathBuf::from(dir).join("media");
+    let Ok(x) = std::fs::read(m.join("anims_X/Zombie/Zombie_Death.X")) else { return };
+    let len = pz_anim::x_duration(&String::from_utf8_lossy(&x)).unwrap();
+    let node = pz_anim::parse_node(&std::fs::read_to_string(m.join("AnimSets/zombie/falldown/default.xml")).unwrap(), None);
+    assert_eq!(node.anim_name, "Zombie_Death");
+    assert_eq!((len / node.speed_scale * TICK_HZ).round() as u32, FALL_DOWN_TICKS);
+}

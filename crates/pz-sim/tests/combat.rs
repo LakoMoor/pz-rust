@@ -68,7 +68,8 @@ fn only_crits_knock_zombies_down_and_they_get_back_up() {
     // While down it neither moves nor bites.
     let mut victim = Player::new(1.0, 0.0);
     let start = z.pos;
-    let ticks = z.reanimate_timer as u32;
+    // The fall-down animation plays first, then the reanimate timer runs.
+    let ticks = z.reanimate_timer as u32 + FALL_DOWN_TICKS;
     for _ in 0..ticks - 1 { z.tick(&mut victim, &mut world); }
     assert_eq!(victim.health, 100.0);
     assert_eq!(z.pos, start);
