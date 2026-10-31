@@ -4,6 +4,7 @@
 //! knows which event a sound plays and with what settings. Decoding the banks and playing audio is separate work.
 pub mod fsb5;
 pub mod vorbis;
+pub mod wav;
 use pz_scripts::{find_all, parse, Block};
 use std::{collections::HashMap, path::Path};
 
