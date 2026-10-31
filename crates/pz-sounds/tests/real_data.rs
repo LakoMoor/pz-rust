@@ -71,13 +71,15 @@ fn fmod_dll_holds_the_vorbis_setup_packets_and_the_first_stream_decodes() {
         let setup = pz_sounds::vorbis::setup_packet(&dll, *c).expect("setup packet in fmod.dll");
         assert!(setup.len() > 1000 && &setup[1..7] == b"vorbis");
     }
-    // The first stream decodes to exactly its sample count of real audio (block sizes 1024 / 2048). The later
-    // streams' boundaries are not understood yet, so only this one is checked.
-    let s = &fsb.streams[0];
-    let data = read_at(off + fsb.data_start as u64, 4164).unwrap();
-    let setup = pz_sounds::vorbis::setup_packet(&dll, s.vorbis_crc.unwrap()).unwrap();
-    let (pcm, _) = pz_sounds::vorbis::decode(setup, s.channels as u8, s.frequency, (10, 11), &data, 0, s.samples).unwrap();
-    assert_eq!(pcm.len() as u64, s.samples * s.channels as u64);
-    let peak = pcm.iter().map(|x| x.unsigned_abs()).max().unwrap();
-    assert!(peak > 1000 && peak < 32767, "peak {peak}");
+    // Streams start where their (16-byte aligned) table offsets say, and each decodes to its sample count.
+    for k in 0..12usize {
+        let s = &fsb.streams[k];
+        let end = fsb.streams[k + 1].data_offset;
+        let data = read_at(off + fsb.data_start as u64 + s.data_offset, (end - s.data_offset) as usize).unwrap();
+        let setup = pz_sounds::vorbis::setup_packet(&dll, s.vorbis_crc.unwrap()).unwrap();
+        let (pcm, _) = pz_sounds::vorbis::decode(setup, s.channels as u8, s.frequency, pz_sounds::vorbis::FMOD_BLOCKSIZES, &data, 0, s.samples).unwrap();
+        assert_eq!(pcm.len() as u64, s.samples * s.channels as u64, "stream {k}");
+        let peak = pcm.iter().map(|x| x.unsigned_abs()).max().unwrap();
+        assert!(peak > 100, "stream {k} is silent");
+    }
 }

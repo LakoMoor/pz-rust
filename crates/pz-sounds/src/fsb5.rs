@@ -67,8 +67,8 @@ impl Fsb5 {
             let raw = u32le(b, p)? as u64 | (u32le(b, p + 4)? as u64) << 32;
             p += 8;
             let mut frequency = FREQ.get(((raw >> 1) & 0xF) as usize).copied().unwrap_or(0);
-            let mut channels = match (raw >> 5) & 3 { 0 => 1, 1 => 2, 2 => 6, _ => 8 };
-            let data_offset = ((raw >> 7) & 0x07FF_FFFF) * 16;
+            let mut channels = if (raw >> 5) & 1 == 0 { 1 } else { 2 };
+            let data_offset = ((raw >> 6) & 0x0FFF_FFFF) * 16;
             let samples = raw >> 34;
             let mut vorbis_crc = None;
             let mut more = raw & 1 != 0;

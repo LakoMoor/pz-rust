@@ -56,7 +56,7 @@ pub fn setup_packet(dll: &[u8], crc: u32) -> Option<&[u8]> {
     None
 }
 
-/// The identification header packet FMOD leaves out. The block sizes are FMOD's fixed pair (256 and 2048 samples).
+/// The identification header packet FMOD leaves out. FMOD's block sizes are 256 and 2048 samples (exponents 8 and 11) - the only pair for which every stream decodes to its sample count plus less than one block.
 fn ident_packet(channels: u8, rate: u32, exps: (u8, u8)) -> Vec<u8> {
     let mut p = vec![1];
     p.extend_from_slice(b"vorbis");
@@ -71,6 +71,9 @@ fn ident_packet(channels: u8, rate: u32, exps: (u8, u8)) -> Vec<u8> {
 
 #[derive(Debug)]
 pub enum VorbisError { Header(String), Audio(String) }
+
+/// The block-size exponents FMOD's Vorbis streams use.
+pub const FMOD_BLOCKSIZES: (u8, u8) = (8, 11);
 
 /// Decode one stream to interleaved 16-bit samples, reading size-prefixed packets from `data` starting at `start`
 /// until `frames` sample frames have been produced (the stream's length from the FSB5 header). Zero bytes are
