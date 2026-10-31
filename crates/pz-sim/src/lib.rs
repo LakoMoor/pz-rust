@@ -277,6 +277,9 @@ const ZOMBIE_HEALTH: f32 = 1.95; // IsoZombie: 1.8 + Rand(0, 0.3); midpoint keep
 const EAT_RANGE: f32 = 1.0;
 /// ZombieEatBodyState.enter: stateEventDelayTimer = Rand.Next(1800, 3600); read here as ticks (the timer's unit is not verified).
 const EAT_MIN_TICKS: u32 = 1800;
+/// `getUpFromOnBack`: the `Zombie_GetUp` clip is 2.0 s long (`media/anims_X`, see pz-anim) and plays at speed scale
+/// 0.8, so standing up takes 2.5 s = 75 ticks. (The original frees the body at the `SetOnFloor` event half way.)
+pub const GET_UP_TICKS: u32 = 75;
 const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
 /// `BodyDamage.healthReductionFromSevereBadMoodles`.
 const SEVERE_MOODLE_DAMAGE: f32 = 0.0165;
@@ -348,13 +351,15 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     climb: Option<(u32, (i32, i32))>,
     /// ZombieEatBodyState: ticks of feeding left, and whether this zombie has had its fill of the current body.
     eating: Option<u32>,
+    /// Ticks left in the get-up animation (`ZombieGetUpState`); 0 when not getting up.
+    get_up: u32,
     /// FakeDeadZombieState: lying motionless, invisible to the AI until someone steps close.
     fake_dead: bool,
     fed: bool }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, fake_dead: false, fed: false };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, get_up: 0, fake_dead: false, fed: false };
         zb.idle_timer = zb.pick_wander_interval(false);
         zb
     }
@@ -474,9 +479,10 @@ impl Zombie {
         if self.on_floor {
             // ZombieOnGroundState: lie there until the reanimate timer runs out, then get up.
             self.reanimate_timer -= 1.0;
-            if self.reanimate_timer <= 0.0 { self.on_floor = false; self.knocked_down = false; }
+            if self.reanimate_timer <= 0.0 { self.on_floor = false; self.knocked_down = false; self.get_up = GET_UP_TICKS; }
             return;
         }
+        if self.get_up > 0 { self.get_up -= 1; return; }
         if self.stagger > 0 { self.stagger -= 1; return; }
         if target.z != self.z { self.idle(world, weather.rain > 0.0); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];

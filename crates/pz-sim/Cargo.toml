@@ -5,3 +5,6 @@ edition.workspace = true
 
 [dependencies]
 pz-world = { path = "../pz-world" }
+
+[dev-dependencies]
+pz-anim = { path = "../pz-anim" }

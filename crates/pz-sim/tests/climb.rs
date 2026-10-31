@@ -100,3 +100,30 @@ fn idle_zombies_wander_more_often_in_the_rain() {
     let (dry, wet) = (count(0.0), count(1.0));
     assert!(wet >= dry, "wet {wet} dry {dry}");
 }
+
+#[test]
+fn a_zombie_needs_the_get_up_animation_before_it_moves_again() {
+    let mut w = pz_world::World::new(std::path::PathBuf::from("."));
+    let mut z = Zombie::new(0.0, 0.0, 0);
+    z.on_floor = true;
+    z.reanimate_timer = 1.0;
+    let mut p = Player::new(8.0, 0.0);
+    let mut first_move = None;
+    for t in 0..400 {
+        z.tick(&mut p, &mut w);
+        if first_move.is_none() && z.pos[0] > 0.01 { first_move = Some(t); }
+    }
+    let t = first_move.expect("it gets up and walks");
+    assert!((GET_UP_TICKS..GET_UP_TICKS + 5).contains(&(t as u32)), "first moved at tick {t}");
+}
+
+#[test]
+fn get_up_ticks_match_the_games_animation_data() {
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let m = std::path::PathBuf::from(dir).join("media");
+    let Ok(x) = std::fs::read(m.join("anims_X/Zombie/Zombie_GetUp.X")) else { return };
+    let len = pz_anim::x_duration(&String::from_utf8_lossy(&x)).unwrap();
+    let node = pz_anim::parse_node(&std::fs::read_to_string(m.join("AnimSets/zombie/getup-fromOnBack/getUpFromOnBack.xml")).unwrap(), None);
+    assert_eq!(node.anim_name, "Zombie_GetUp");
+    assert_eq!((len / node.speed_scale * TICK_HZ).round() as u32, GET_UP_TICKS);
+}
