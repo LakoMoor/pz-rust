@@ -62,3 +62,11 @@ fn every_firearm_has_a_matching_ammo_item() {
     }
     assert!(missing.is_empty(), "no ammo item for: {missing:?}");
 }
+
+#[test]
+fn clothing_scripts_carry_insulation_and_coverage() {
+    let Some(db) = db() else { return };
+    let hat = db.get("Base.Hat_WoolyHat").unwrap();
+    assert_eq!((hat.insulation, hat.wind_resistance), (0.9, 0.9));
+    assert_eq!(hat.blood_location, vec!["Head".to_string()]);
+}

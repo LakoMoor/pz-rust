@@ -53,6 +53,9 @@ pub struct Inputs {
     pub world_seconds: f32,
     /// `BodyPart.wetness` per part, 0..=100.
     pub wetness: [f32; PARTS],
+    /// Per-part clothing insulation and wind resistance (`ThermalNode.insulation` / `windresist`, see `clothing`).
+    pub insulation: [f32; PARTS],
+    pub windresist: [f32; PARTS],
 }
 
 impl Default for Inputs {
@@ -74,6 +77,8 @@ impl Default for Inputs {
             hyperthermia_level: 0,
             world_seconds: 1.0,
             wetness: [0.0; PARTS],
+            insulation: [0.0; PARTS],
+            windresist: [0.0; PARTS],
         }
     }
 }
@@ -244,8 +249,7 @@ impl Thermoregulator {
             let n = &mut self.nodes[k];
             let mut external = i.air_temperature;
             if i.air_and_wind_temperature < i.air_temperature {
-                // Wind resistance is 0 without clothing, so the full chill applies.
-                external -= i.air_temperature - i.air_and_wind_temperature;
+                external -= (i.air_temperature - i.air_and_wind_temperature) / (1.0 + i.windresist[k]);
             }
             let mut d = external - n.skin_celcius;
             if d <= 0.0 {
@@ -254,10 +258,11 @@ impl Thermoregulator {
                 d /= 1.0 + 3.0 * body_wetness;
             }
             d *= 0.3;
+            d /= 1.0 + i.insulation[k];
             n.heat_delta = d * SKIN_SURFACE[k];
             if n.primary_delta > 0.0 {
                 let fl = 0.2 + 0.8 * fluids;
-                let mut c = met::DEFAULT * n.primary_delta * SKIN_SURFACE[k];
+                let mut c = met::DEFAULT * n.primary_delta * SKIN_SURFACE[k] / (1.0 + i.insulation[k]);
                 c *= fl * (0.1 + 0.9 * prim_heat_mod);
                 c *= humidity_mod;
                 c *= 1.0 - 0.2 * weight_delta;
@@ -273,7 +278,7 @@ impl Thermoregulator {
             }
             if n.secondary_delta > 0.0 {
                 let fl = 0.1 + 0.9 * fluids;
-                let mut c = met::MAX * 0.75 * n.secondary_delta * SKIN_SURFACE[k];
+                let mut c = met::MAX * 0.75 * n.secondary_delta * SKIN_SURFACE[k] / (1.0 + i.insulation[k]);
                 c *= fl;
                 c *= 0.85 + 0.15 * humidity_mod;
                 c *= 1.0 - 0.2 * weight_delta;
@@ -323,7 +328,7 @@ impl Thermoregulator {
         let core_c = self.nodes[CORE].celcius;
         for k in 0..PARTS {
             let dist = DIST_TO_CORE[k];
-            let insulation = 1.0; // 1 + node insulation (0 without clothing)
+            let insulation = 1.0 + i.insulation[k];
             let n = &mut self.nodes[k];
             n.primary_delta = if self.body_heat_delta < 0.0 {
                 self.body_heat_delta * (1.0 + dist)
