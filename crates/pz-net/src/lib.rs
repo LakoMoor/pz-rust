@@ -200,6 +200,16 @@ impl Server {
         }
     }
 
+    /// Put on a clothing item (`BloodLocation`, `Insulation`, `WindResistance` from its script). Returns false if the
+    /// player is unknown or the item covers nothing.
+    pub fn wear(&mut self, player: ClientId, def: &pz_items::ItemDef) -> bool {
+        let Some(p) = self.players.get_mut(&player) else { return false };
+        let parts: Vec<usize> = def.blood_location.iter().flat_map(|l| pz_sim::clothing::covered_parts(l)).collect();
+        if parts.is_empty() { return false; }
+        p.worn.push(pz_sim::clothing::Garment { parts, insulation: def.insulation, wind_resistance: def.wind_resistance, wetness: 0.0, condition: 100.0 });
+        true
+    }
+
     /// Whether the power grid still works (`SandboxOptions.doesPowerGridExist`).
     pub fn power_on(&self) -> bool { (self.world_hours / 24.0) as f64 <= self.elec_shut_days as f64 }
 

@@ -2,7 +2,7 @@
 use pz_scripts::{find_all, parse, Block};
 use std::{collections::HashMap, path::Path};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ItemDef {
     /// Full id, e.g. `Base.Axe`.
     pub id: String,

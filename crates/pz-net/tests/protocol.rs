@@ -212,3 +212,16 @@ fn the_power_grid_fails_after_the_sandbox_shutoff_day() {
     s.elec_shut_days = 30;
     assert!(s.power_on());
 }
+
+#[test]
+fn wearing_clothing_adds_insulation_to_the_covered_parts() {
+    let mut s = server();
+    s.join(1, 0.0, 0.0);
+    let coat = pz_items::ItemDef { blood_location: vec!["Jacket".into()], insulation: 0.8, wind_resistance: 0.5, ..Default::default() };
+    assert!(s.wear(1, &coat));
+    assert!(!s.wear(1, &pz_items::ItemDef::default()), "an item with no coverage is not clothing");
+    assert!(!s.wear(2, &coat), "unknown player");
+    let p = s.player_mut(1).unwrap();
+    let (ins, _) = pz_sim::clothing::node_values(&p.worn);
+    assert!(ins[6] > 1.0 && ins[16] == 0.0);
+}
