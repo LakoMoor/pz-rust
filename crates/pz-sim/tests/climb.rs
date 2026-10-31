@@ -81,3 +81,22 @@ fn a_zombie_playing_dead_ignores_distant_players_and_springs_when_stepped_on() {
     let crawlers = (0..400).filter(|i| { let mut z = Zombie::new(*i as f32 * 3.1, 1.0, 0); z.play_dead(); z.is_crawler() }).count();
     assert!((140..260).contains(&crawlers), "{crawlers}");
 }
+
+#[test]
+fn idle_zombies_wander_more_often_in_the_rain() {
+    use pz_sim::Weather;
+    let mut w = pz_world::World::new(std::path::PathBuf::from("."));
+    let mut count = |rain: f32| {
+        let mut moved = 0;
+        for i in 0..40 {
+            let mut z = Zombie::new(i as f32 * 5.0, 0.0, 0);
+            let mut far = Player::new(900.0, 900.0);
+            let weather = Weather { rain, ..Weather::default() };
+            for _ in 0..1500 { z.tick_in(&mut far, &mut w, &weather); }
+            if z.pos != [i as f32 * 5.0, 0.0] { moved += 1; }
+        }
+        moved
+    };
+    let (dry, wet) = (count(0.0), count(1.0));
+    assert!(wet >= dry, "wet {wet} dry {dry}");
+}

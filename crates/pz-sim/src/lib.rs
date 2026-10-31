@@ -355,7 +355,7 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
         let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, fake_dead: false, fed: false };
-        zb.idle_timer = zb.pick_wander_interval();
+        zb.idle_timer = zb.pick_wander_interval(false);
         zb
     }
 
@@ -433,13 +433,13 @@ impl Zombie {
     }
 
     /// ZombieIdleState.pickRandomWanderInterval: Rand.Next(400, 1000), x1.5 when it is not raining.
-    fn pick_wander_interval(&mut self) -> f32 { (400 + self.rand(600)) as f32 * 1.5 }
+    fn pick_wander_interval(&mut self, raining: bool) -> f32 { (400 + self.rand(600)) as f32 * if raining { 1.0 } else { 1.5 } }
 
     /// ZombieIdleState.execute: with no target, every so often pick a free square within +-4 and walk there.
-    fn idle(&mut self, world: &mut World) {
+    fn idle(&mut self, world: &mut World, raining: bool) {
         self.idle_timer -= 1.0;
         if self.idle_timer <= 0.0 {
-            self.idle_timer = self.pick_wander_interval();
+            self.idle_timer = self.pick_wander_interval(raining);
             let (sx, sy) = square_of(self.pos);
             let (x, y) = (sx + self.rand(8) as i32 - 4, sy + self.rand(8) as i32 - 4);
             if world.has_floor(x, y, self.z) && world.flags(x, y, self.z) & flag::SOLID == 0 {
@@ -478,13 +478,13 @@ impl Zombie {
             return;
         }
         if self.stagger > 0 { self.stagger -= 1; return; }
-        if target.z != self.z { self.idle(world); return; }
+        if target.z != self.z { self.idle(world, weather.rain > 0.0); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
-        if dist > weather.vision_radius_for(self.sight, 1.0, self.eating.is_some()) { self.idle(world); return; }
+        if dist > weather.vision_radius_for(self.sight, 1.0, self.eating.is_some()) { self.idle(world, weather.rain > 0.0); return; }
         if target.health <= 0.0 {
             // Nothing left to fight: walk up to the body and feed on it.
-            if self.fed { self.eating = None; self.idle(world); return; }
+            if self.fed { self.eating = None; self.idle(world, weather.rain > 0.0); return; }
             if dist < EAT_RANGE {
                 self.facing = [d[0] / dist.max(1e-6), d[1] / dist.max(1e-6)];
                 let left = match self.eating { Some(t) => t, None => EAT_MIN_TICKS + self.rand(EAT_MIN_TICKS) };
