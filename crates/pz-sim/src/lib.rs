@@ -89,7 +89,9 @@ impl Player {
         let rain = if w.outside && w.raining && w.rain_intensity >= 0.1 { w.rain_intensity } else { 0.0 };
         let dry = if rain > 0.0 { 0.0 } else { (0.1 + (w.air_temperature - 5.0).max(0.0) / 10.0).max(0.0) };
         clothing::soak(&mut self.worn, if rain > 0.0 { rain * wetness::WETNESS_INCREASE } else { -dry * wetness::WETNESS_DECREASE });
-        self.wetness_stat = wetness::update(&mut self.wetness, self.wetness_stat, &self.thermo, w);
+        let mut innermost = [None; body::PARTS];
+        for g in &self.worn { for &k in &g.parts { if innermost[k].is_none() { innermost[k] = Some(g.wetness); } } }
+        self.wetness_stat = wetness::update(&mut self.wetness, self.wetness_stat, &self.thermo, w, &innermost);
     }
 
     /// One thermoregulator tick for the weather at the player's square (no clothing yet).

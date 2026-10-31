@@ -53,3 +53,25 @@ fn rain_soaks_the_outer_layer_first_and_clothes_dry_out() {
     for _ in 0..5000 { p.tick_wetness(dry_weather); }
     assert!(p.worn[1].wetness < before);
 }
+
+#[test]
+fn skin_under_clothing_stays_dry_until_the_inner_layer_is_soaked() {
+    use pz_sim::wetness::Weather;
+    let rain = Weather { outside: true, raining: true, rain_intensity: 1.0, air_temperature: 10.0 };
+    let mut p = Player::new(0.0, 0.0);
+    p.worn = vec![Garment::new("Shirt", 0.3, 0.1)];
+    let mut dry_at = None;
+    for t in 0..200_000 {
+        p.tick_wetness(rain);
+        // Every part is blended toward the body average, so covered skin is never exactly dry, but a dry shirt must
+        // not wet it directly: the exposed part ahead of it stays the wettest.
+        if p.worn[0].wetness < 50.0 { assert!(p.wetness[6] <= p.wetness[0] + 1e-4, "tick {t}"); }
+        else if dry_at.is_none() { dry_at = Some(t); }
+    }
+    assert!(dry_at.is_some() && p.wetness[6] > 0.0, "shirt {} skin {}", p.worn[0].wetness, p.wetness[6]);
+    // Uncovered parts (feet) got wet right away.
+    let mut q = Player::new(0.0, 0.0);
+    q.worn = vec![Garment::new("Shirt", 0.3, 0.1)];
+    for _ in 0..500 { q.tick_wetness(rain); }
+    assert!(q.wetness[16] > 0.0);
+}

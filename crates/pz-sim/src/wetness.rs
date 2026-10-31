@@ -1,6 +1,7 @@
 //! Body wetness of an unclothed character, ported from `BodyDamage.UpdateWetness` and the bare-skin paths of
 //! `ClothingWetness.updateWetness`: rain soaks the skin, sweat wets it, body heat and warm air dry it, and the
-//! parts then blend toward their average. Clothing layers, umbrellas, tents and vehicles are not modelled.
+//! parts then blend toward their average. Under clothing the skin only gets wet (or dries) through the innermost
+//! garment (`innermost`: its wetness per covered part). Umbrellas, tents and vehicles are not modelled.
 
 use crate::body::PARTS;
 use crate::thermo::{Thermoregulator, DIST_TO_CORE};
@@ -22,7 +23,7 @@ pub struct Weather {
 
 /// One tick (game-time multiplier 1). `wetness` is per part, 0..=100; `stat` is the `WETNESS` stat, the
 /// running blended value the parts are pulled toward. Returns the new stat.
-pub fn update(wetness: &mut [f32; PARTS], stat: f32, th: &Thermoregulator, w: Weather) -> f32 {
+pub fn update(wetness: &mut [f32; PARTS], stat: f32, th: &Thermoregulator, w: Weather, innermost: &[Option<f32>; PARTS]) -> f32 {
     let (mut inc, mut dec) = (0.0f32, 0.0f32);
     if w.outside && w.raining {
         inc = if w.rain_intensity < 0.1 { 0.0 } else { w.rain_intensity };
@@ -50,7 +51,7 @@ pub fn update(wetness: &mut [f32; PARTS], stat: f32, th: &Thermoregulator, w: We
             if inc > 0.0 { d = 0.0; }
         }
         sweating[k] = d > 0.0;
-        if d != 0.0 {
+        if d != 0.0 && innermost[k].is_none() {
             d *= if d > 0.0 { base_inc } else { base_dec };
             wetness[k] = (wetness[k] + d).clamp(0.0, 100.0);
         }
@@ -58,8 +59,20 @@ pub fn update(wetness: &mut [f32; PARTS], stat: f32, th: &Thermoregulator, w: We
     // Rain on, or air drying, the skin.
     let base = if inc > 0.0 { inc * base_inc } else { -dec * base_dec };
     for k in 0..PARTS {
-        if (base < 0.0 && !sweating[k]) || wetness[k] <= 100.0 {
-            wetness[k] = (wetness[k] + base).clamp(0.0, 100.0);
+        match innermost[k] {
+            None => {
+                if (base < 0.0 && !sweating[k]) || wetness[k] <= 100.0 {
+                    wetness[k] = (wetness[k] + base).clamp(0.0, 100.0);
+                }
+            }
+            Some(under) => {
+                if base > 0.0 && !sweating[k] && under >= 50.0 && wetness[k] <= 100.0 {
+                    wetness[k] = (wetness[k] + base / 2.0).clamp(0.0, 100.0);
+                }
+                if base < 0.0 && !sweating[k] && under <= 50.0 {
+                    wetness[k] = (wetness[k] + base / 2.0).clamp(0.0, 100.0);
+                }
+            }
         }
     }
     // The parts blend toward their average, which in turn follows the stat.
