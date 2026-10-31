@@ -47,6 +47,9 @@ pub struct Player {
     pub pain_stat: f32,
     pub needs: needs::Needs,
     pub thermo: thermo::Thermoregulator,
+    pub cold: cold::Cold,
+    /// Per-part body wetness 0..=100 (nothing wets the player yet; callers may set it).
+    pub wetness: [f32; body::PARTS],
     /// Unit vector of the last movement direction (swings go this way).
     pub facing: [f32; 2],
     swing_cd: u32,
@@ -59,7 +62,7 @@ pub struct Player {
 pub fn square_of(p: [f32; 2]) -> (i32, i32) { ((p[0] + 0.5).floor() as i32, (p[1] + 0.5).floor() as i32) }
 
 impl Player {
-    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, needs: needs::Needs::default(), thermo: thermo::Thermoregulator::default(), facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
+    pub fn new(x: f32, y: f32) -> Self { Self { pos: [x, y], z: 0, height: 0.0, health: 100.0, infected: false, body: body::Body::with_seed(x.to_bits() ^ y.to_bits().rotate_left(11) ^ 0xA5A5_1234), infection: None, infection_pct: 0.0, pain_stat: 0.0, needs: needs::Needs::default(), thermo: thermo::Thermoregulator::default(), cold: cold::Cold::default(), wetness: [0.0; body::PARTS], facing: [1.0, 0.0], swing_cd: 0, step_clock: 0, rng: 0x1234_5679 ^ (x.to_bits() ^ y.to_bits().rotate_left(7)) | 1, sounds: Vec::new() } }
 
     /// Advance one tick. Axes are resolved separately so the player slides along walls.
     /// Hunger and thirst for one tick; `delta_minutes_per_day` comes from the clock (`30 / minutes per day`).
@@ -72,18 +75,23 @@ impl Player {
     }
 
     /// One thermoregulator tick for the weather at the player's square (no clothing yet).
-    pub fn tick_thermo(&mut self, air_temperature: f32, air_and_wind_temperature: f32, humidity: f32, running: bool, world_seconds: f32) {
+    pub fn tick_thermo(&mut self, air_temperature: f32, air_and_wind_temperature: f32, humidity: f32, running: bool, world_seconds: f32, indoors: bool) {
         let n = &self.needs;
         let i = thermo::Inputs {
             air_temperature, air_and_wind_temperature, humidity,
             hunger: n.hunger, thirst: n.thirst, fatigue: n.fatigue, endurance: n.endurance,
             activity: if running { thermo::met::RUNNING_10KMH } else { thermo::met::DEFAULT },
             world_seconds,
+            wetness: self.wetness,
             hypothermia_level: moodles::hypothermia(self.thermo.temperature),
             hyperthermia_level: moodles::hyperthermia(self.thermo.temperature),
             ..thermo::Inputs::default()
         };
         self.thermo.update(&i);
+        let hypo = i.hypothermia_level;
+        let delta = self.thermo.catch_a_cold_delta(&self.wetness, hypo);
+        let rest = cold::Rest { in_room: indoors, wet_moodle: self.wetness.iter().any(|&w| w > 15.0), hypothermia_level: hypo, fatigue: self.needs.fatigue, hunger: self.needs.hunger, thirst: self.needs.thirst };
+        self.cold.tick(delta, rest);
     }
 
     /// Advance wounds one tick: the drop in overall body health caused by bleeding and festering comes off `health`.

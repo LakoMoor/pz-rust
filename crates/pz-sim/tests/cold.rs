@@ -48,3 +48,17 @@ fn has_a_cold_moodle_levels() {
     assert_eq!([20.0, 21.0, 41.0, 61.0, 76.0].map(|s| has_a_cold(s, 100.0)), [0, 1, 2, 3, 4]);
     assert_eq!(has_a_cold(90.0, 0.0), 0);
 }
+
+#[test]
+fn a_soaked_player_in_the_cold_comes_down_with_a_cold() {
+    let mut p = pz_sim::Player::new(0.0, 0.0);
+    p.wetness = [100.0; 17];
+    for _ in 0..200_000 {
+        p.tick_thermo(2.0, 2.0, 0.8, false, 1.0, false);
+        if p.cold.has_cold { break; }
+    }
+    assert!(p.cold.has_cold, "catch {}", p.cold.catch);
+    let mut dry = pz_sim::Player::new(0.0, 0.0);
+    for _ in 0..50_000 { dry.tick_thermo(27.0, 27.0, 0.5, false, 1.0, true); }
+    assert!(!dry.cold.has_cold && dry.cold.catch == 0.0);
+}

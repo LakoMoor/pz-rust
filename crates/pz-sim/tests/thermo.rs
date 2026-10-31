@@ -79,8 +79,8 @@ fn a_hot_player_gets_thirstier_faster_than_a_comfortable_one() {
     let mut comfy = pz_sim::Player::new(0.0, 0.0);
     let mut hot = pz_sim::Player::new(0.0, 0.0);
     for _ in 0..20_000 {
-        comfy.tick_thermo(27.0, 27.0, 0.5, false, 1.0);
-        hot.tick_thermo(45.0, 45.0, 0.5, false, 1.0);
+        comfy.tick_thermo(27.0, 27.0, 0.5, false, 1.0, false);
+        hot.tick_thermo(45.0, 45.0, 0.5, false, 1.0, false);
         comfy.tick_needs(0.02, false);
         hot.tick_needs(0.02, false);
     }
