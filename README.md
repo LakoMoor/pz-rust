@@ -25,8 +25,10 @@ cargo run --release -p pz-viewer -- --connect 127.0.0.1:16261   # client mode (r
 cargo test --release                                         # differential tests vs. your install
 ```
 
-Status: map rendering (all floors, roofs), collision, stairs, doors (E to open/close), player movement, zombies that chase and bite, melee combat (Space). Not yet: characters/animation,
-Lua, items, zombie animation/combat, audio, networking.
+Status: map rendering (all floors, roofs), collision, stairs, doors and windows, player movement, zombies that chase, climb,
+thump doors and windows and bite, melee and firearms, items and crafting, Lua, a thermoregulation / wetness / cold / stress /
+clothing body model, barricades, an authoritative UDP server with a client mode, and decoding of the game's FMOD Vorbis streams.
+Not yet: characters/animation rendering, mapping sound events to bank streams and playback, hit reactions.
 
 ![Knox Bank](docs/img/bank.jpg)
 

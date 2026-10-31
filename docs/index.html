@@ -53,6 +53,11 @@
     <div class="card"><b>wgpu renderer.</b> Vulkan, DX12 and Metal. Every atlas page lives in array-texture slabs: one draw call per frame instead of 1,270.</div>
     <div class="card"><b>Floors &amp; roofs.</b> Multi-storey buildings render with correct stacking; roofs hide when you walk indoors.</div>
     <div class="card"><b>Deterministic sim.</b> Fixed 30&nbsp;Hz tick with wall-aware movement driven by the game's own tile properties.</div>
+    <div class="card"><b>Zombies &amp; combat.</b> Chasing, climbing, doors and windows that get thumped down, with animation timings read from the game's own <code>.X</code> and AnimSets files.</div>
+    <div class="card"><b>Body model.</b> Thermoregulation, wetness, colds, stress and clothing insulation checked against the game's data.</div>
+    <div class="card"><b>Barricades.</b> Planks, metal bars and sheets absorb thumping; players add and remove them over the network.</div>
+    <div class="card"><b>Multiplayer core.</b> Authoritative UDP server, binary protocol and a client mode in the viewer.</div>
+    <div class="card"><b>Audio groundwork.</b> FMOD FSB5 banks parse and their Vorbis streams decode (setup packets are read from your own <code>fmod.dll</code>).</div>
   </div>
 
   <h2>Screenshots</h2>
@@ -69,7 +74,7 @@ cargo run --release -p pz-viewer</code></pre>
   <p>WASD to walk, Shift to run, mouse wheel to zoom. <code>--shot out.png</code> renders a frame headlessly.</p>
 
   <h2>Roadmap</h2>
-  <p>Characters &amp; animation, doors, stairs, items and Lua scripting, zombies, audio, then a headless server with networking.</p>
+  <p>Done: map, collision, doors, stairs, items, crafting, Lua, zombies, networking, body model, barricades, audio decoding. Next: mapping sound events to bank streams and playing them, characters &amp; animation, hit reactions.</p>
 </section>
 
 <footer>
