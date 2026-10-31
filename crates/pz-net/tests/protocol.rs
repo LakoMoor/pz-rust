@@ -289,3 +289,29 @@ fn barricading_spends_planks_from_the_pockets_and_removing_returns_them() {
     assert_eq!(barricades.len(), 1);
     assert_eq!((barricades[0].x, barricades[0].y, barricades[0].north, barricades[0].planks), (dx, dy, true, [1000, 0, 0, 0]));
 }
+
+#[test]
+fn metal_barricades_need_their_item_and_bare_edges() {
+    assert_eq!(ClientMsg::decode(&ClientMsg::BarricadeMetal(true).encode()), Ok(ClientMsg::BarricadeMetal(true)));
+    let dir = std::env::var("PZ_DIR").unwrap_or_else(|_| r"E:\Games\steamapps\common\ProjectZomboid".into());
+    let media = std::path::PathBuf::from(dir).join("media");
+    if !media.is_dir() { return; }
+    let db = pz_items::ItemDb::load(&media.join("scripts")).unwrap();
+    let def = db.get("Base.Pistol").cloned().unwrap();
+    let mut w = World::new(media.join("maps").join("Muldraugh, KY"));
+    w.load_tile_flags(&media);
+    let (mut dx, mut dy) = (0, 0);
+    'f: for y in 1500..1800 { for x in 12500..12800 {
+        if w.flags(x, y, 0) & pz_world::flag::DOOR_N != 0 { (dx, dy) = (x, y); break 'f; }
+    } }
+    let mut s = Server::new(w, vec![]);
+    s.set_ammo_kit(pz_items::ItemDb::load(&media.join("scripts")).unwrap(), def, 0);
+    s.join(1, dx as f32 + 0.5, dy as f32 + 0.5);
+    let edge = (dx, dy, 0, true);
+    s.handle(1, ClientMsg::BarricadeMetal(true));
+    assert!(s.world().barricade(edge).is_none(), "no bars in the pockets");
+    s.pack_mut(1).unwrap().add(&db, "Base.MetalBar", 1).unwrap();
+    s.handle(1, ClientMsg::BarricadeMetal(true));
+    assert_eq!(s.world().barricade(edge).unwrap().metal_bar, pz_world::METAL_BAR_HEALTH);
+    assert_eq!(s.pack_mut(1).unwrap().count("Base.MetalBar"), 0);
+}

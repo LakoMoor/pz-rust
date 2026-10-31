@@ -11,6 +11,8 @@ pub type ClientId = u32;
 
 /// The item id of the planks used to barricade.
 const PLANK: &str = "Base.Plank";
+const METAL_BAR: &str = "Base.MetalBar";
+const SHEET_METAL: &str = "Base.SheetMetal";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMsg {
@@ -27,6 +29,8 @@ pub enum ClientMsg {
     Barricade,
     /// Pull the last plank off the nearest barricade.
     Unbarricade,
+    /// Bolt metal bars (`true`) or a metal sheet (`false`) over the nearest door or window.
+    BarricadeMetal(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +85,7 @@ impl ClientMsg {
             ClientMsg::Reload => w.u8(5),
             ClientMsg::Barricade => w.u8(6),
             ClientMsg::Unbarricade => w.u8(7),
+            ClientMsg::BarricadeMetal(bars) => { w.u8(8); w.u8(*bars as u8); }
         }
         w.0
     }
@@ -94,6 +99,7 @@ impl ClientMsg {
             5 => Ok(ClientMsg::Reload),
             6 => Ok(ClientMsg::Barricade),
             7 => Ok(ClientMsg::Unbarricade),
+            8 => Ok(ClientMsg::BarricadeMetal(r.u8()? != 0)),
             t => Err(DecodeError::BadTag(t)),
         }
     }
@@ -229,6 +235,17 @@ impl Server {
             }
             ClientMsg::Interact => {
                 if let Some(p) = self.players.get(&id) { p.interact(&mut self.world); }
+            }
+            ClientMsg::BarricadeMetal(bars) => {
+                let Some(p) = self.players.get(&id) else { return };
+                let (x, y, z) = (p.pos[0].floor() as i32, p.pos[1].floor() as i32, p.z);
+                let Some(edge) = self.world.barricadable_edge(x, y, z) else { return };
+                let item = if bars { METAL_BAR } else { SHEET_METAL };
+                let stock = self.kit.as_ref().map(|k| &k.0).zip(self.packs.get_mut(&id));
+                match stock {
+                    Some((db, inv)) => { if inv.count(item) > 0 && self.world.add_metal(edge, bars) { inv.remove(db, item, 1); } }
+                    None => { self.world.add_metal(edge, bars); }
+                }
             }
             ClientMsg::Barricade | ClientMsg::Unbarricade => {
                 let Some(p) = self.players.get(&id) else { return };
