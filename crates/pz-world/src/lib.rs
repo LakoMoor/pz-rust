@@ -65,8 +65,37 @@ pub const DOOR_HEALTH: i32 = 500;
 /// `IsoWindow.health` for a plain window.
 pub const WINDOW_HEALTH: i32 = 50;
 
+/// `IsoBarricade`: up to four planks, or a metal-bar or metal-sheet barricade, on one door or window edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Barricade { pub planks: [i32; 4], pub metal_bar: i32, pub metal: i32 }
+
+pub const PLANK_HEALTH: i32 = 1000;
+pub const METAL_BAR_HEALTH: i32 = 3000;
+pub const METAL_HEALTH: i32 = 5000;
+
+impl Barricade {
+    pub fn num_planks(&self) -> usize { self.planks.iter().filter(|p| **p > 0).count() }
+    pub fn is_destroyed(&self) -> bool { self.metal <= 0 && self.metal_bar <= 0 && self.num_planks() == 0 }
+    /// `IsoBarricade.Damage`: the metal sheet takes the hit first, then the bars, then the highest-numbered plank
+    /// still standing (planks are nailed on from slot 0 up).
+    pub fn damage(&mut self, amount: i32) {
+        if self.metal > 0 { self.metal = (self.metal - amount).max(0); }
+        else if self.metal_bar > 0 { self.metal_bar = (self.metal_bar - amount).max(0); }
+        else if let Some(p) = self.planks.iter_mut().rev().find(|p| **p > 0) { *p = (*p - amount).max(0); }
+    }
+    /// `IsoBarricade.getHealth`: the metal's health, else the mean health of the planks left.
+    pub fn health(&self) -> i32 {
+        if self.metal > 0 { return self.metal; }
+        if self.metal_bar > 0 { return self.metal_bar; }
+        let n = self.num_planks() as i32;
+        if n == 0 { 0 } else { self.planks.iter().sum::<i32>() / n }
+    }
+}
+
 pub struct World {
     dir: PathBuf,
+    /// Barricades by the edge they sit on: the square owning it and whether it is the north edge.
+    barricades: HashMap<(i32, i32, usize, bool), Barricade>,
     cells: HashMap<(i32, i32), Option<Cell>>,
     /// tile name -> collision flags (only tiles with any flag).
     flags: HashMap<String, u16>,
@@ -94,7 +123,7 @@ fn load_cell(dir: &Path, cx: i32, cy: i32) -> Option<Cell> {
 impl World {
     /// `map_dir` is e.g. `<PZ>/media/maps/Muldraugh, KY`.
     pub fn new(map_dir: impl Into<PathBuf>) -> Self {
-        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new(), door_health: HashMap::new(), broken_doors: HashSet::new(), window_health: HashMap::new(), smashed_windows: HashSet::new() }
+        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new(), door_health: HashMap::new(), broken_doors: HashSet::new(), window_health: HashMap::new(), smashed_windows: HashSet::new(), barricades: HashMap::new() }
     }
 
     /// Load collision flags from the game's `*.tiles` definition files in `media/`.
@@ -141,6 +170,8 @@ impl World {
     pub fn damage_door(&mut self, x: i32, y: i32, z: usize, damage: i32) -> Option<i32> {
         if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 || self.broken_doors.contains(&(x, y, z)) { return None; }
         let key = (x, y, z);
+        let north = self.flags(x, y, z) & flag::DOOR_N != 0;
+        if self.hit_barricade((x, y, z, north), damage).is_some() { return Some(self.door_health.get(&key).copied().unwrap_or(DOOR_HEALTH)); }
         let hp = self.door_health.entry(key).or_insert(DOOR_HEALTH);
         *hp = (*hp - damage).max(0);
         let left = *hp;
@@ -156,18 +187,47 @@ impl World {
         let (sq, north) = if dx > 0 || dy > 0 { (b, dy > 0) } else { (a, dy < 0) };
         let bit = if north { flag::WINDOW_N } else { flag::WINDOW_W };
         let key = (sq.0, sq.1, z, north);
-        (self.flags(sq.0, sq.1, z) & bit != 0 && !self.smashed_windows.contains(&key)).then_some(key)
+        (self.flags(sq.0, sq.1, z) & bit != 0 && (!self.smashed_windows.contains(&key) || self.barricades.contains_key(&key))).then_some(key)
     }
 
     /// Hit a window for `damage` (`IsoWindow.damage`): at zero the glass is smashed for good. Returns the glass left.
     pub fn damage_window(&mut self, key: (i32, i32, usize, bool), damage: i32) -> i32 {
+        if self.hit_barricade(key, damage).is_some() { return self.window_health.get(&key).copied().unwrap_or(WINDOW_HEALTH).max(1); }
         let hp = self.window_health.entry(key).or_insert(WINDOW_HEALTH);
         *hp = (*hp - damage).max(0);
         if *hp == 0 { self.smashed_windows.insert(key); }
         *hp
     }
 
-    pub fn window_smashed(&self, key: (i32, i32, usize, bool)) -> bool { self.smashed_windows.contains(&key) }
+    /// Whether the way through the window is open: glass gone and no barricade over it.
+    pub fn window_smashed(&self, key: (i32, i32, usize, bool)) -> bool { self.smashed_windows.contains(&key) && !self.barricades.contains_key(&key) }
+
+    /// Nail a plank of `health` onto the edge (`IsoBarricade.addPlank`); false if four are already there or it is metal.
+    pub fn add_plank(&mut self, edge: (i32, i32, usize, bool), health: i32) -> bool {
+        let b = self.barricades.entry(edge).or_default();
+        if b.metal > 0 || b.metal_bar > 0 { return false; }
+        match b.planks.iter_mut().find(|p| **p <= 0) { Some(p) => { *p = health.clamp(1, PLANK_HEALTH); true } None => false }
+    }
+
+    /// Bolt on a metal-bar or metal-sheet barricade; false if the edge already carries planks or metal.
+    pub fn add_metal(&mut self, edge: (i32, i32, usize, bool), bars: bool) -> bool {
+        let b = self.barricades.entry(edge).or_default();
+        if !b.is_destroyed() { return false; }
+        if bars { b.metal_bar = METAL_BAR_HEALTH } else { b.metal = METAL_HEALTH }
+        true
+    }
+
+    pub fn barricade(&self, edge: (i32, i32, usize, bool)) -> Option<Barricade> { self.barricades.get(&edge).copied() }
+
+    /// Hit the barricade on this edge; returns its health after the hit, or `None` if there is none. A destroyed
+    /// barricade is removed (`IsoBarricade.Thump`).
+    fn hit_barricade(&mut self, edge: (i32, i32, usize, bool), damage: i32) -> Option<i32> {
+        let b = self.barricades.get_mut(&edge)?;
+        b.damage(damage);
+        let left = b.health();
+        if b.is_destroyed() { self.barricades.remove(&edge); }
+        Some(left)
+    }
 
     pub fn door_broken(&self, x: i32, y: i32, z: usize) -> bool { self.broken_doors.contains(&(x, y, z)) }
 
@@ -175,6 +235,8 @@ impl World {
     pub fn toggle_door(&mut self, x: i32, y: i32, z: usize) -> Option<bool> {
         if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 || self.broken_doors.contains(&(x, y, z)) { return None; }
         let k = (x, y, z);
+        let north = self.flags(x, y, z) & flag::DOOR_N != 0;
+        if self.barricades.contains_key(&(x, y, z, north)) { return None; }
         Some(if self.open_doors.remove(&k) { false } else { self.open_doors.insert(k); true })
     }
 
