@@ -283,6 +283,9 @@ pub const GET_UP_TICKS: u32 = 75;
 /// Falling over (`falldown/default`): `Zombie_Death` is 1.1 s at speed scale 0.8 = 1.375 s = 41 ticks. Other hit
 /// reactions pick other clips (`Zombie_HitDeath_*`, `Zombie_ShotLegFall_*` ...) of 0.7-2 s; the default is used.
 pub const FALL_DOWN_TICKS: u32 = 41;
+/// Thump animations (`ThumpState` picks `DoorClaw`, `Door` or `DoorBang` at random): `(loop ticks, ThumpFrame ticks)` (the claw lands twice per loop).
+/// Each is `clip length / speed scale (0.8)` and `time_pc` of the event, in 30 Hz ticks (see the pz-anim test).
+pub const THUMP_ANIMS: [(u32, &[u32]); 3] = [(160, &[37, 117]), (38, &[21]), (75, &[64])];
 const CLIMB_TICKS: u32 = 45; // 1.5 s over a window or fence (animation-driven in the original)
 /// `BodyDamage.healthReductionFromSevereBadMoodles`.
 const SEVERE_MOODLE_DAMAGE: f32 = 0.0165;
@@ -358,13 +361,19 @@ pub struct Zombie { pub pos: [f32; 2], pub z: usize, pub health: f32, cooldown: 
     get_up: u32,
     /// Ticks left in the fall-down animation (`ZombieFallDownState`); the reanimate timer starts after it.
     fall_down: u32,
+    /// Door being thumped: its key, the thump animation (index into [`THUMP_ANIMS`]) and ticks into the current loop.
+    thump: Option<((i32, i32, usize), usize, u32)>,
+    /// `IsoZombie.strength` (lore setting: 5 superhuman, 3 normal, 1 weak): damage per door hit.
+    pub strength: i32,
+    /// Zombies within 1.5 tiles including this one (`getSurroundingThumpers`); the server keeps it current.
+    pub thumpers: u32,
     /// FakeDeadZombieState: lying motionless, invisible to the AI until someone steps close.
     fake_dead: bool,
     fed: bool }
 
 impl Zombie {
     pub fn new(x: f32, y: f32, z: usize) -> Self { let rng = (x.to_bits() ^ y.to_bits().rotate_left(13) ^ 0x9E37_79B9) | 1;
-        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, get_up: 0, fall_down: 0, fake_dead: false, fed: false };
+        let mut zb = Self { pos: [x, y], z, health: ZOMBIE_HEALTH, cooldown: 0, hit_time: 0, stagger: 0, on_floor: false, knocked_down: false, path: Vec::new(), stuck: 0, reanimate_timer: 0.0, facing: [1.0, 0.0], idle_timer: 0.0, wander: None, rng, sight: Sight::Normal, crawl_mod: None, speed_mod: 0.625, speed_type: SpeedType::Shambler, climb: None, eating: None, get_up: 0, fall_down: 0, thump: None, strength: 3, thumpers: 1, fake_dead: false, fed: false };
         zb.idle_timer = zb.pick_wander_interval(false);
         zb
     }
@@ -491,6 +500,7 @@ impl Zombie {
         }
         if self.get_up > 0 { self.get_up -= 1; return; }
         if self.stagger > 0 { self.stagger -= 1; return; }
+        if self.thump_door(world) { return; }
         if target.z != self.z { self.idle(world, weather.rain > 0.0); return; }
         let d = [target.pos[0] - self.pos[0], target.pos[1] - self.pos[1]];
         let dist = (d[0] * d[0] + d[1] * d[1]).sqrt();
@@ -547,6 +557,7 @@ impl Zombie {
         if self.try_climb(d, world) { return; }
         let before = self.pos;
         self.step_toward(d, world);
+        if self.pos == before && self.start_thump(d, world) { return; }
         if self.pos == before {
             self.stuck += 1;
             if self.stuck >= 5 {
@@ -557,6 +568,39 @@ impl Zombie {
             self.stuck = 0;
         }
     }
+
+    /// Pressed against a closed door that lies toward the target: start hammering on it (`ThumpState.enter`).
+    fn start_thump(&mut self, d: [f32; 2], world: &mut World) -> bool {
+        let from = square_of(self.pos);
+        let axes = if d[0].abs() >= d[1].abs() { [0, 1] } else { [1, 0] };
+        for a in axes {
+            if d[a].abs() < 0.05 { continue; }
+            let sgn = d[a].signum() as i32;
+            let to = if a == 0 { (from.0 + sgn, from.1) } else { (from.0, from.1 + sgn) };
+            if let Some(key) = world.closed_door_between(from, to, self.z) {
+                let kind = self.rand(3) as usize;
+                self.thump = Some((key, kind, 0));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `ThumpState.execute`: advance the thump animation; at its `ThumpFrame` event the door takes damage. Doors only
+    /// give way when at least two zombies crowd against them (`IsoDoor.Thump`: `tot >= 2`). Returns true while busy.
+    fn thump_door(&mut self, world: &mut World) -> bool {
+        let Some((key, kind, t)) = self.thump else { return false };
+        if world.door_open(key.0, key.1, key.2) { self.thump = None; return false; }
+        let (period, events) = THUMP_ANIMS[kind];
+        if events.contains(&t) && self.thumpers >= 2 {
+            let broke = world.damage_door(key.0, key.1, key.2, self.strength) == Some(0);
+            if broke { self.thump = None; return false; }
+        }
+        self.thump = Some((key, kind, (t + 1) % period));
+        true
+    }
+
+    pub fn is_thumping(&self) -> bool { self.thump.is_some() }
 
     pub fn is_eating(&self) -> bool { self.eating.is_some() }
 

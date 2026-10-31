@@ -251,6 +251,13 @@ impl Server {
         }
         self.climate.advance(&mut self.clock);
         let weather = self.clock.weather_now(self.climate.rain_at(&self.clock));
+        // Crowding at a door: zombies within 1.5 tiles of each thumper (itself included) decide whether it gives way.
+        let spots: Vec<([f32; 2], usize)> = self.zombies.iter().map(|z| (z.pos, z.z)).collect();
+        for zb in &mut self.zombies {
+            if zb.is_thumping() {
+                zb.thumpers = spots.iter().filter(|(p, z)| *z == zb.z && (p[0] - zb.pos[0]).hypot(p[1] - zb.pos[1]) < 1.5).count() as u32;
+            }
+        }
         // Each zombie chases the nearest living player on its floor.
         for zb in &mut self.zombies {
             // Prefer the nearest living player; with none on this floor, the nearest body to feed on.

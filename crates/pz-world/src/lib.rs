@@ -60,12 +60,18 @@ fn tile_flags(props: &[(String, String)]) -> u16 {
     f
 }
 
+/// `IsoDoor.health` for a plain wooden door.
+pub const DOOR_HEALTH: i32 = 500;
+
 pub struct World {
     dir: PathBuf,
     cells: HashMap<(i32, i32), Option<Cell>>,
     /// tile name -> collision flags (only tiles with any flag).
     flags: HashMap<String, u16>,
     open_doors: HashSet<(i32, i32, usize)>,
+    /// Hit points left on doors that have been attacked (a fresh wooden door has [`DOOR_HEALTH`]) and doors broken down.
+    door_health: HashMap<(i32, i32, usize), i32>,
+    broken_doors: HashSet<(i32, i32, usize)>,
 }
 
 /// One tile column: ordered tile names, bottom first.
@@ -82,7 +88,7 @@ fn load_cell(dir: &Path, cx: i32, cy: i32) -> Option<Cell> {
 impl World {
     /// `map_dir` is e.g. `<PZ>/media/maps/Muldraugh, KY`.
     pub fn new(map_dir: impl Into<PathBuf>) -> Self {
-        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new() }
+        Self { dir: map_dir.into(), cells: HashMap::new(), flags: HashMap::new(), open_doors: HashSet::new(), door_health: HashMap::new(), broken_doors: HashSet::new() }
     }
 
     /// Load collision flags from the game's `*.tiles` definition files in `media/`.
@@ -110,9 +116,37 @@ impl World {
         f
     }
 
+    /// The closed door standing on the edge between two orthogonally adjacent squares, if any: `DOOR_N` on a square
+    /// blocks its north edge, `DOOR_W` its west edge.
+    pub fn closed_door_between(&mut self, a: (i32, i32), b: (i32, i32), z: usize) -> Option<(i32, i32, usize)> {
+        let (key, bit) = match (b.0 - a.0, b.1 - a.1) {
+            (0, -1) => ((a.0, a.1, z), flag::DOOR_N),
+            (0, 1) => ((b.0, b.1, z), flag::DOOR_N),
+            (-1, 0) => ((a.0, a.1, z), flag::DOOR_W),
+            (1, 0) => ((b.0, b.1, z), flag::DOOR_W),
+            _ => return None,
+        };
+        let has = self.flags(key.0, key.1, z) & bit != 0;
+        (has && !self.open_doors.contains(&key)).then_some(key)
+    }
+
+    /// Hit a door for `damage` points (`IsoDoor.Damage`). At zero it is broken down for good: open and unclosable.
+    /// Returns the hit points left, or `None` if there is no door there.
+    pub fn damage_door(&mut self, x: i32, y: i32, z: usize, damage: i32) -> Option<i32> {
+        if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 || self.broken_doors.contains(&(x, y, z)) { return None; }
+        let key = (x, y, z);
+        let hp = self.door_health.entry(key).or_insert(DOOR_HEALTH);
+        *hp = (*hp - damage).max(0);
+        let left = *hp;
+        if left == 0 { self.open_doors.insert(key); self.broken_doors.insert(key); }
+        Some(left)
+    }
+
+    pub fn door_broken(&self, x: i32, y: i32, z: usize) -> bool { self.broken_doors.contains(&(x, y, z)) }
+
     /// Open/close the door on square (x, y, z). Returns the new state, or `None` if there is no door.
     pub fn toggle_door(&mut self, x: i32, y: i32, z: usize) -> Option<bool> {
-        if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 { return None; }
+        if self.flags(x, y, z) & (flag::DOOR_N | flag::DOOR_W) == 0 || self.broken_doors.contains(&(x, y, z)) { return None; }
         let k = (x, y, z);
         Some(if self.open_doors.remove(&k) { false } else { self.open_doors.insert(k); true })
     }
