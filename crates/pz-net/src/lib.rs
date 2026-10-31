@@ -20,6 +20,8 @@ pub enum ClientMsg {
     Shoot,
     /// Top up the magazine from the rounds in the player's pockets.
     Reload,
+    /// Nail a plank over the nearest door or window.
+    Barricade,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +69,7 @@ impl ClientMsg {
             ClientMsg::Interact => w.u8(3),
             ClientMsg::Shoot => w.u8(4),
             ClientMsg::Reload => w.u8(5),
+            ClientMsg::Barricade => w.u8(6),
         }
         w.0
     }
@@ -78,6 +81,7 @@ impl ClientMsg {
             3 => Ok(ClientMsg::Interact),
             4 => Ok(ClientMsg::Shoot),
             5 => Ok(ClientMsg::Reload),
+            6 => Ok(ClientMsg::Barricade),
             t => Err(DecodeError::BadTag(t)),
         }
     }
@@ -163,6 +167,7 @@ impl Server {
     pub fn set_gun(&mut self, g: Gun) { self.gun = Some(g); }
     /// Enable reloading: `def` is the wielded firearm's script and each player joins carrying `spare_rounds` of its ammo.
     pub fn set_ammo_kit(&mut self, db: pz_items::ItemDb, def: pz_items::ItemDef, spare_rounds: u32) { self.kit = Some((db, def, spare_rounds)); }
+    pub fn world(&self) -> &World { &self.world }
     pub fn player_mut(&mut self, id: ClientId) -> Option<&mut Player> { self.players.get_mut(&id) }
 
     pub fn join(&mut self, id: ClientId, x: f32, y: f32) { self.players.insert(id, Player::new(x, y));
@@ -198,6 +203,12 @@ impl Server {
             }
             ClientMsg::Interact => {
                 if let Some(p) = self.players.get(&id) { p.interact(&mut self.world); }
+            }
+            ClientMsg::Barricade => {
+                if let Some(p) = self.players.get(&id) {
+                    let (x, y) = (p.pos[0].floor() as i32, p.pos[1].floor() as i32);
+                    if let Some(edge) = self.world.barricadable_edge(x, y, p.z) { self.world.add_plank(edge, pz_world::PLANK_HEALTH); }
+                }
             }
         }
     }

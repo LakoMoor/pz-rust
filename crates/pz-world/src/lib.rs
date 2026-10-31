@@ -217,6 +217,18 @@ impl World {
         true
     }
 
+    /// A door or window edge a character standing on (x, y) could barricade: those of its own square and its
+    /// orthogonal neighbours, the player's own square first.
+    pub fn barricadable_edge(&mut self, x: i32, y: i32, z: usize) -> Option<(i32, i32, usize, bool)> {
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)] {
+            let (sx, sy) = (x + dx, y + dy);
+            let f = self.flags(sx, sy, z);
+            if f & (flag::DOOR_N | flag::WINDOW_N) != 0 { return Some((sx, sy, z, true)); }
+            if f & (flag::DOOR_W | flag::WINDOW_W) != 0 { return Some((sx, sy, z, false)); }
+        }
+        None
+    }
+
     pub fn barricade(&self, edge: (i32, i32, usize, bool)) -> Option<Barricade> { self.barricades.get(&edge).copied() }
 
     /// Hit the barricade on this edge; returns its health after the hit, or `None` if there is none. A destroyed
