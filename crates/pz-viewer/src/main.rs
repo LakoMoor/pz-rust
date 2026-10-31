@@ -61,6 +61,8 @@ impl Scene {
             }
             let zoff = -(z as f32) * LEVEL_PX;
             let has_barricades = self.world.has_barricades();
+            // Barricades go on last so neighbouring squares' door and wall sprites never cover them.
+            let mut overlay: Vec<Instance> = Vec::new();
             // Pass 1: ground layer of every square. Pass 2: everything above, back to front.
             for pass in 0..2 {
                 for d in (x0 + y0)..=(x1 + y1) {
@@ -89,11 +91,11 @@ impl Scene {
                                 let base = f[1] - z as f32 * LEVEL_PX;
                                 if b.metal > 0 || b.metal_bar > 0 {
                                     let col = if b.metal > 0 { [0.55, 0.57, 0.6, 1.0] } else { [0.35, 0.36, 0.4, 1.0] };
-                                    emit(&mut inst, &mut batches, WHITE, Instance { pos: [f[0] - 24.0, base - 100.0], size: [48.0, 96.0], uv: WHITE_UV, color: col, layer: 0.0 });
+                                    overlay.push(Instance { pos: [f[0] - 24.0, base - 100.0], size: [48.0, 96.0], uv: WHITE_UV, color: col, layer: 0.0 });
                                 } else {
                                     for (i, hp) in b.planks.iter().enumerate().filter(|(_, hp)| **hp > 0) {
                                         let shade = 0.35 + 0.25 * (*hp as f32 / 1000.0).min(1.0);
-                                        emit(&mut inst, &mut batches, WHITE, Instance { pos: [f[0] - 24.0, base - 24.0 - i as f32 * 24.0], size: [48.0, 12.0], uv: WHITE_UV, color: [shade, shade * 0.7, 0.2, 1.0], layer: 0.0 });
+                                        overlay.push(Instance { pos: [f[0] - 24.0, base - 24.0 - i as f32 * 24.0], size: [48.0, 12.0], uv: WHITE_UV, color: [shade, shade * 0.7, 0.2, 1.0], layer: 0.0 });
                                     }
                                 }
                             }
@@ -116,6 +118,7 @@ impl Scene {
                     }
                 }
             }
+            for i in overlay { emit(&mut inst, &mut batches, WHITE, i); }
         }
         (inst, batches)
     }
